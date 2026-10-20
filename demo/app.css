@@ -151,3 +151,31 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
   .stats { grid-template-columns: repeat(2, 1fr); }
   .grid2 { grid-template-columns: 1fr; }
 }
+
+/* Список посещений — компактный режим для моноблока */
+.vlist { display: grid; grid-template-columns: 1fr; gap: 6px; }
+@media (min-width: 1280px) { .vlist { grid-template-columns: 1fr 1fr; column-gap: 12px; } }
+.lrow { display: grid; grid-template-columns: 8px minmax(120px, 1fr) 92px 28px auto; align-items: center; gap: 10px;
+  background: var(--surface); border: 2px solid var(--line); border-radius: 12px; padding: 5px 8px 5px 0; min-height: 48px; overflow: hidden; }
+.lrow .dot { align-self: stretch; border-radius: 0 6px 6px 0; margin: -5px 0; }
+.lrow.ok .dot { background: var(--ok); }
+.lrow.warn { background: var(--warn-bg); border-color: #f3d06b; } .lrow.warn .dot { background: #f5b301; }
+.lrow.bad { background: var(--danger-bg); border-color: #f39aa5; animation: pulse 1.6s infinite; } .lrow.bad .dot { background: var(--danger); }
+.lrow .nm { min-width: 0; line-height: 1.15; }
+.lrow .nm b { display: block; font-size: 16px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.lrow .nm small { display: block; color: var(--muted); font-weight: 700; font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.lrow .tm { font-size: 20px; font-weight: 900; font-variant-numeric: tabular-nums; text-align: right; }
+.lrow.ok .tm { color: #0f5d2c; } .lrow.warn .tm { color: #7a5400; } .lrow.bad .tm { color: #a3121f; }
+.lrow .pd { width: 26px; height: 26px; border-radius: 50%; display: grid; place-items: center; font-weight: 900; font-size: 14px; }
+.lrow .pd.paid { background: var(--ok-bg); color: var(--ok); }
+.lrow .pd.open { background: var(--danger); color: #fff; }
+.lrow .ra { display: flex; gap: 4px; justify-content: flex-end; }
+.lrow .ra .btn.sm { padding: 7px 10px; }
+.lrow.ok .btn.extend { animation: none; }
+.lrow.warn .btn.extend, .lrow.bad .btn.extend { animation: wiggle 1.2s infinite; }
+@media (max-width: 700px) {
+  .lrow { grid-template-columns: 8px 1fr auto 28px; row-gap: 6px; }
+  .lrow .ra { grid-column: 2 / -1; justify-content: flex-start; flex-wrap: wrap; }
+}
+@media (min-width: 901px) { .stat { padding: 8px 14px; } .stat b { font-size: 22px; } .stats { margin-bottom: 12px; } }
+@media (min-width: 1280px) and (max-width: 1499px) { .lrow .ra .btn.sm { padding: 7px 8px; font-size: 12px; } .lrow .tm { font-size: 18px; } .lrow { grid-template-columns: 8px minmax(90px, 1fr) 80px 26px auto; gap: 6px; } }

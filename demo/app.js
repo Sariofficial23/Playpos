@@ -4,7 +4,8 @@
 (function () {
   "use strict";
 
-  const STORE = "playpos-demo-v1";
+  const STORE = "playpos-demo-v2";
+  const LAYOUT = "playpos-layout";
   const PALETTE = "playpos-palette";
   const TZ = "Asia/Tashkent";
   const MIN = 60000;
@@ -55,7 +56,7 @@
 
   /* ---------- Состояние ---------- */
   let S;
-  const ui = { route: "floor", search: "", billFilter: "open", period: "today", user: null, soundCtx: null, notified: {}, sig: "" };
+  const ui = { layout: "list", route: "floor", search: "", billFilter: "open", period: "today", user: null, soundCtx: null, notified: {}, sig: "" };
 
   function seed() {
     const t = Date.now();
@@ -96,6 +97,12 @@
     add("Саша", "17", "t5", 20, true, "card");
     add("Лейла", "4", "t2", 4, false);
     add("Мадина", "", "t6", 95, true, "cash");
+    // Ещё дети — чтобы показать загруженную площадку (20+ человек)
+    ["Камила", "Тимур", "Самира", "Абдулла", "Сабина", "Давид", "Зарина", "Умар", "Мария", "Ислам", "Нигора", "Артём",
+     "Шахзода", "Бобур", "Алина", "Жасур", "Малика", "Рустам", "София", "Анвар"].forEach((n, i) => {
+      const tid = ["t3", "t4", "t5", "t2", "t4"][i % 5], mins = s.tariffs.find((x) => x.id === tid).minutes;
+      add(n, String(20 + i), tid, Math.max(1, Math.round(mins * ((i * 37) % 100) / 100)), i % 3 !== 0, i % 2 ? "card" : "cash");
+    });
     const done = add("Ибрагим", "3", "t4", 150, true, "cash");
     done.exitAt = done.end + 2 * MIN;
     s.expenses.push({ id: id("e"), at: t - 120 * MIN, category: "Хозтовары", amount: 45000, comment: "Салфетки, антисептик", staffId: "u1", source: "cash", shiftId: "s1" });
@@ -568,12 +575,28 @@
       </div></div>`;
   }
 
+  /* Компактная строка списка — помещается 20–30 детей на одном экране моноблока */
+  function row(v) {
+    const st = status(v), paid = openBills(v).length === 0;
+    return `<div class="lrow ${st}" data-v="${v.id}">
+      <span class="dot"></span>
+      <div class="nm"><b>${esc(v.child)}</b><small>${v.bracelet ? "№" + esc(v.bracelet) + " · " : ""}${hm(v.start)}–${hm(v.end)} · ${esc(v.tariffName)}${v.ext.length ? " · +" + v.ext.length : ""}</small></div>
+      <div class="tm" data-t="${v.id}">${st === "bad" ? "+" : ""}${clock(v.end - Date.now())}</div>
+      <span class="pd ${paid ? "paid" : "open"}" title="${paid ? "Оплачен" : "Не оплачен"}">${paid ? "✓" : "!"}</span>
+      <div class="ra">
+        ${can("extend") ? `<button class="btn sm extend" data-a="extend">⏩ Продлить</button>` : ""}
+        ${can("pay") ? `<button class="btn sm sun" data-a="bill" ${paid ? 'style="visibility:hidden" tabindex="-1"' : ""}>Счёт</button>` : ""}
+        ${can("finish") ? `<button class="btn sm" data-a="finish">Выход</button>` : ""}
+        ${can("print") ? `<button class="btn sm ghost" data-a="print" title="Талон">🖨</button>` : ""}
+      </div></div>`;
+  }
+
   function floorCards() {
     const q = ui.search.toLowerCase();
     const order = { bad: 0, warn: 1, ok: 2 };
     const list = S.visits.filter((v) => !v.exitAt && (!q || v.child.toLowerCase().includes(q) || v.bracelet === q))
       .sort((a, b) => order[status(a)] - order[status(b)] || a.end - b.end);
-    return list.length ? list.map(card).join("") : `<div class="empty" style="grid-column:1/-1">Сейчас на площадке никого нет. Нажмите «Новое посещение».</div>`;
+    return list.length ? list.map(ui.layout === "list" ? row : card).join("") : `<div class="empty" style="grid-column:1/-1">Сейчас на площадке никого нет. Нажмите «Новое посещение».</div>`;
   }
 
   function viewFloor() {
@@ -591,8 +614,9 @@
         <div class="stat"><small>Не оплачено</small><b>${money(unpaid)}</b></div>
         <div class="stat"><small>Получено сегодня</small><b>${can("reports") ? money(paidToday) : "—"}</b></div>
       </div>
-      <div class="bar"><input class="input" id="q" placeholder="Поиск по имени или номеру браслета" value="${esc(ui.search)}"></div>
-      <div class="cards" id="grid">${floorCards()}</div>`);
+      <div class="bar"><input class="input" id="q" placeholder="Поиск по имени или номеру браслета" value="${esc(ui.search)}">
+        <div class="seg" id="lay"><button data-l="list" class="${ui.layout === "list" ? "on" : ""}">☰ Список</button><button data-l="cards" class="${ui.layout === "cards" ? "on" : ""}">▦ Плитки</button></div></div>
+      <div class="${ui.layout === "list" ? "vlist" : "cards"}" id="grid">${floorCards()}</div>`);
   }
 
   function mountFloor() {
@@ -601,6 +625,11 @@
     $("#snd").onclick = () => {
       try { ui.soundCtx = ui.soundCtx || new (window.AudioContext || window.webkitAudioContext)(); ui.soundCtx.resume(); } catch (e) {}
       S.settings.sound = true; save(); beep(); render(); toast("Звук включён — это тестовый сигнал");
+    };
+    $("#lay").onclick = (e) => {
+      const b = e.target.closest("[data-l]"); if (!b) return;
+      ui.layout = b.dataset.l; try { localStorage.setItem(LAYOUT, ui.layout); } catch (e) {}
+      render();
     };
     $("#q").oninput = (e) => { ui.search = e.target.value; $("#grid").innerHTML = floorCards(); };
     $("#grid").onclick = (e) => {
@@ -861,6 +890,7 @@
 
   /* ---------- Запуск ---------- */
   S = load();
+  try { ui.layout = localStorage.getItem(LAYOUT) || "list"; } catch (e) {}
   try { applyPalette(localStorage.getItem(PALETTE) || "jungle"); } catch (e) {}
   // Посещения, которые уже были просрочены при открытии, не должны сразу сыпать уведомлениями
   S.visits.forEach((v) => { const st = status(v); if (st === "bad") ui.notified[v.id + "e"] = ui.notified[v.id + "w"] = 1; if (st === "warn") ui.notified[v.id + "w"] = 1; });
