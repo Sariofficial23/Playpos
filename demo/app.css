@@ -195,3 +195,34 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
 .lrow .nm .cl { font-weight: 900; }
 .lrow.ok .cl { color: var(--ok); } .lrow.warn .cl { color: #a06d00; } .lrow.bad .cl { color: var(--danger); }
 .cat-all.on span { background: #fff; color: var(--ink); }
+
+/* Боковая панель «Закрыть счёт» */
+.modal.drawer { place-items: stretch end; padding: 0; }
+.modal.drawer .dlg { width: min(460px, 100%); max-height: 100vh; height: 100vh; border-radius: 26px 0 0 26px; padding: 26px 26px 30px; position: relative; animation: drawer .18s ease-out; }
+@keyframes drawer { from { transform: translateX(40px); opacity: 0; } }
+.xbtn { position: absolute; right: 18px; top: 16px; border: 0; background: none; font-size: 30px; line-height: 1; color: var(--muted); }
+.dlg .sub { color: var(--muted); font-weight: 700; margin-top: -8px; }
+.lines { border-top: 2px solid var(--line); border-bottom: 2px solid var(--line); margin-top: 16px; padding: 8px 0; }
+.lines .ln, .dlg > .ln { display: flex; justify-content: space-between; gap: 10px; padding: 8px 0; font-size: 16px; }
+.dlg > .ln.muted { color: var(--muted); padding-bottom: 0; }
+.paidline { background: var(--ok-bg); color: #0f5d2c; border-radius: 10px; padding: 8px 10px; font-size: 13px; margin: 2px 0 8px; }
+.tot { display: flex; justify-content: space-between; align-items: center; padding: 16px 0 6px; font-weight: 900; font-size: 18px; }
+.tot b { font-size: 30px; }
+.pick.pay { display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 18px 10px; color: var(--muted); position: relative; }
+.pick.pay span { font-weight: 900; font-size: 17px; }
+.pick.pay.on { color: var(--ink); }
+.pick.pay.on::after { content: "✓"; position: absolute; top: 8px; right: 8px; width: 24px; height: 24px; border-radius: 50%; background: var(--brand); color: #fff; font-size: 14px; display: grid; place-items: center; }
+.note { color: var(--muted); font-size: 13px; margin: 8px 0 0; }
+.btn.big { width: 100%; padding: 16px; font-size: 17px; margin-top: 16px; }
+.row .btn.big { margin-top: 0; }
+tfoot td { border-top: 2px solid var(--line); border-bottom: 0; }
+@media (max-width: 600px) { .modal.drawer .dlg { border-radius: 0; } }
+
+/* Палитра 4 «Ночь» — как на макете: тёмное меню, синий, розовый */
+:root[data-palette="night"] { --brand: #2f62f0; --brand-ink: #1f48c4; --brand-2: #e85fa6; --accent: #f6b5d6; --ink: #141c3a; --muted: #5f6886; --bg: #f4f6fc; --surface: #fff; --line: #e1e6f3; --soft: #eaf0ff; }
+:root[data-palette="night"] .side { background: #141c3a; border-right: 0; color: #fff; }
+:root[data-palette="night"] .side .logo, :root[data-palette="night"] .side a.nav { color: #fff; }
+:root[data-palette="night"] .side a.nav:hover { background: rgba(255,255,255,.08); }
+:root[data-palette="night"] .side a.nav.on { background: var(--brand); }
+:root[data-palette="night"] .side .who { background: rgba(255,255,255,.08); }
+:root[data-palette="night"] .logo-mark { box-shadow: 4px 4px 0 var(--accent); }

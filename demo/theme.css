@@ -39,6 +39,19 @@
   --line: #e6e0fb;
   --soft: #efeaff;
 }
+:root[data-palette="night"] {
+  /* Вариант 4 «Ночь» — по макету заказчика */
+  --brand: #2f62f0;
+  --brand-ink: #1f48c4;
+  --brand-2: #e85fa6;
+  --accent: #f6b5d6;
+  --ink: #141c3a;
+  --muted: #5f6886;
+  --bg: #f4f6fc;
+  --surface: #ffffff;
+  --line: #e1e6f3;
+  --soft: #eaf0ff;
+}
 :root {
   /* Статусы таймера одинаковы во всех палитрах — их нельзя путать с брендом */
   --ok: #16a34a;

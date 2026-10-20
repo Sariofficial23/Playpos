@@ -4,7 +4,7 @@
 (function () {
   "use strict";
 
-  const STORE = "playpos-demo-v2";
+  const STORE = "playpos-demo-v3";
   const LAYOUT = "playpos-layout";
   const PALETTE = "playpos-palette";
   const TZ = "Asia/Tashkent";
@@ -78,7 +78,11 @@
         { id: "u4", name: "Дилноза", login: "dilnoza", pin: "4444", role: "admin", active: true, perms: permsOf("admin") },
       ],
       visits: [], bills: [], refunds: [], expenses: [], log: [],
-      shifts: [{ id: "s1", no: 1, staffId: "u1", openedAt: t - 180 * MIN, closedAt: null, openingCash: 200000, countedCash: null }],
+      shifts: [
+        { id: "s0", no: 1, staffId: "u2", openedAt: t - 26 * 60 * MIN, closedAt: t - 14 * 60 * MIN, openingCash: 200000, countedCash: 655000 },
+        { id: "s1", no: 2, staffId: "u1", openedAt: t - 180 * MIN, closedAt: null, openingCash: 200000, countedCash: null },
+        { id: "s2", no: 3, staffId: "u2", openedAt: t - 170 * MIN, closedAt: null, openingCash: 150000, countedCash: null },
+      ],
     };
     S = s;
     const add = (child, _, tid, startedAgo, paid, method) => {
@@ -86,9 +90,10 @@
       const v = { id: id("v"), no: ++s.seq, child, tariffName: tr.name, minutes: tr.minutes,
         start: t - startedAgo * MIN, end: t - startedAgo * MIN + tr.minutes * MIN, exitAt: null, staffId: "u1", ext: [] };
       s.visits.push(v);
+      const who = s.visits.length % 3 ? "u2" : "u1"; // оплаты принимали разные кассиры
       const b = { id: id("b"), no: ++s.seq, visitId: v.id, items: [{ title: tr.name, amount: tr.price, kind: "base", minutes: tr.minutes }],
-        status: paid ? "paid" : "open", method: paid ? method : null, paidAt: paid ? v.start + MIN : null, paidBy: paid ? "u1" : null,
-        shiftId: paid ? "s1" : null, createdAt: v.start };
+        status: paid ? "paid" : "open", method: paid ? method : null, paidAt: paid ? v.start + MIN : null, paidBy: paid ? who : null,
+        shiftId: paid ? (who === "u1" ? "s1" : "s2") : null, createdAt: v.start };
       s.bills.push(b);
       return v;
     };
@@ -105,6 +110,12 @@
     });
     const done = add("Ибрагим", "3", "t4", 150, true, "cash");
     done.exitAt = done.end + 2 * MIN;
+    [["Лола", 60, 40000, "cash"], ["Карим", 30, 25000, "card"], ["Ева", 120, 70000, "cash"], ["Бахтияр", 60, 40000, "card"], ["Диана", 30, 25000, "cash"]].forEach(([n, mi, pr, me], i) => {
+      const st = t - (24 - i) * 60 * MIN;
+      const v = { id: id("v"), no: ++s.seq, child: n, tariffName: mi + " минут", minutes: mi, start: st, end: st + mi * MIN, exitAt: st + mi * MIN, staffId: "u2", ext: [] };
+      s.visits.push(v);
+      s.bills.push({ id: id("b"), no: ++s.seq, visitId: v.id, items: [{ title: v.tariffName, amount: pr, kind: "base", minutes: mi }], status: "paid", method: me, paidAt: st + MIN, paidBy: "u2", shiftId: "s0", createdAt: st });
+    });
     s.expenses.push({ id: id("e"), at: t - 120 * MIN, category: "Хозтовары", amount: 45000, comment: "Салфетки, антисептик", staffId: "u1", source: "cash", shiftId: "s1" });
     s.currentUserId = null;
     return s;
@@ -173,9 +184,10 @@
   }
 
   /* ---------- Модальные окна ---------- */
-  function modal(html, mount) {
+  function modal(html, mount, opts) {
     const m = $("#modal");
     m.innerHTML = html; m.hidden = false;
+    m.classList.toggle("drawer", !!(opts && opts.side));
     m.onclick = (e) => { if (e.target === m) close(); };
     if (mount) mount(m);
     const f = m.querySelector("[autofocus]"); if (f) f.focus();
@@ -316,6 +328,21 @@
     });
   }
 
+  const ICON_CASH = `<svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="7" width="16" height="11" rx="2"/><path d="M6 7V5.5A1.5 1.5 0 0 1 7.5 4H20a2 2 0 0 1 2 2v9a1.5 1.5 0 0 1-1.5 1.5H18"/><circle cx="10" cy="12.5" r="2.2"/></svg>`;
+  const ICON_CARD = `<svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><rect x="2" y="5" width="20" height="14" rx="2.5"/><path d="M2 10h20"/></svg>`;
+  const methodName = (m) => (m === "cash" ? "Наличные" : "Карта");
+  const payButtons = () => `<label class="f">Способ оплаты</label>
+    <div class="pay2" id="pm"><button class="pick pay on" data-m="cash">${ICON_CASH}<span>Наличные</span></button><button class="pick pay" data-m="card">${ICON_CARD}<span>Карта</span></button></div>
+    <p class="note">Только учёт способа оплаты — терминалы и эквайринг не подключаются.</p>`;
+  function mountPay(m, set) {
+    $("#pm", m).onclick = (e) => {
+      const b = e.target.closest("[data-m]"); if (!b) return;
+      set(b.dataset.m); m.querySelectorAll("#pm .pick").forEach((x) => x.classList.toggle("on", x === b));
+    };
+  }
+  const billLines = (b) => b.items.map((i) => `<div class="ln"><span>${esc(i.title)}</span><span>${money(i.amount)}</span></div>`).join("") +
+    (b.status === "paid" ? `<div class="paidline">✓ Оплачено: <b>${methodName(b.method)}</b> · ${dt(b.paidAt)} · кассир ${esc(staffName(b.paidBy))}</div>` : "");
+
   function payDialog(bills, after) {
     if (!can("pay")) return toast("Нет права принимать оплату", "bad");
     bills = bills.filter((b) => b.status === "open");
@@ -323,41 +350,65 @@
     if (!requireShift()) return;
     let method = "cash"; // при каждом открытии по умолчанию «Наличные»
     const total = bills.reduce((a, b) => a + billTotal(b), 0);
+    const v = S.visits.find((x) => x.id === bills[0].visitId);
     modal(`<div class="dlg">
+      <button class="xbtn" data-x aria-label="Закрыть">×</button>
       <h2>Закрыть счёт</h2>
-      ${bills.map((b) => `<div class="summary"><b>Счёт №${b.no}</b>${b.items.map((i) => `<div class="row" style="justify-content:space-between"><span>${esc(i.title)}</span><span>${money(i.amount)}</span></div>`).join("")}</div>`).join("")}
-      <div class="total"><span>Итого</span><b>${money(total)}</b></div>
-      <label class="f">Способ оплаты</label>
-      <div class="pay2" id="pm"><button class="pick on" data-m="cash">💵 Наличные</button><button class="pick" data-m="card">💳 Карта</button></div>
-      <p style="color:var(--muted);font-size:13px">Это только отметка, как получены деньги. Платёжные терминалы не подключаются.</p>
-      <div class="foot"><button class="btn ghost" data-x>Отмена</button><button class="btn" id="pOk">Подтвердить оплату</button></div>
+      <div class="sub">${esc(v ? v.child : "")} · счёт ${bills.map((b) => "№" + b.no).join(", ")}</div>
+      <div class="lines">${bills.map(billLines).join("")}</div>
+      <div class="tot"><span>Итого</span><b>${money(total)}</b></div>
+      ${payButtons()}
+      <button class="btn big" id="pOk">Подтвердить оплату</button>
     </div>`, (m) => {
-      $("#pm", m).onclick = (e) => { const b = e.target.closest("[data-m]"); if (!b) return; method = b.dataset.m; m.querySelectorAll("#pm .pick").forEach((x) => x.classList.toggle("on", x === b)); };
+      mountPay(m, (x) => (method = x));
       $("[data-x]", m).onclick = close;
       $("#pOk", m).onclick = (e) => {
         e.target.disabled = true; // защита от двойного клика
         payBills(bills, method);
-        close(); toast(`Оплачено ${money(total)} — ${method === "cash" ? "наличные" : "карта"}`);
+        close(); toast(`Оплачено ${money(total)} — ${methodName(method).toLowerCase()}`);
         if (after) after(); else render();
       };
-    });
+    }, { side: true });
   }
 
-  function finishDialog(v) {
-    if (!can("finish")) return toast("Нет права завершать посещения", "bad");
-    const ob = openBills(v);
-    const done = () => { finishVisit(v); render(); toast(`${esc(v.child)}: посещение завершено`); };
-    if (ob.length) {
-      if (!can("pay")) return toast("Есть неоплаченный счёт — нужен сотрудник с правом оплаты", "bad");
-      return payDialog(ob, done);
-    }
-    modal(`<div class="dlg"><h2>Завершить посещение?</h2>
-      <div class="summary">${esc(v.child)} · начало ${hm(v.start)} · окончание ${hm(v.end)}<br>Счета оплачены — повторно деньги не берутся.</div>
-      <div class="foot"><button class="btn ghost" data-x>Отмена</button><button class="btn" id="fOk">Завершить</button></div></div>`, (m) => {
+  /* Панель выхода: всегда видно, как и кем оплачено, и что ещё нужно взять */
+  function checkoutPanel(v, exit) {
+    if (exit && !can("finish")) return toast("Нет права завершать посещения", "bad");
+    const bills = visitBills(v), open = bills.filter((b) => b.status === "open");
+    if (open.length && !can("pay")) return toast("Есть неоплаченный счёт — нужен сотрудник с правом оплаты", "bad");
+    if (open.length && !requireShift()) return;
+    let method = "cash";
+    const t = Date.now(), over = Math.max(0, t - v.end);
+    const due = open.reduce((a, b) => a + billTotal(b), 0);
+    const paidSum = bills.filter((b) => b.status === "paid").reduce((a, b) => a + billTotal(b), 0);
+    modal(`<div class="dlg">
+      <button class="xbtn" data-x aria-label="Закрыть">×</button>
+      <h2>${exit ? "Выход ребёнка" : "Закрыть счёт"}</h2>
+      <div class="sub">${esc(v.child)} · ${hm(v.start)}–${hm(v.end)} · на площадке ${clock(t - v.start)}</div>
+      ${over ? `<div class="banner" style="margin:12px 0 0">Время вышло ${clock(over)} назад. Если нужна доплата — нажмите «Продлить».</div>` : ""}
+      <div class="lines">${bills.map(billLines).join("")}</div>
+      ${paidSum && due ? `<div class="ln muted"><span>Уже оплачено</span><span>${money(paidSum)}</span></div>` : ""}
+      <div class="tot"><span>${due ? "К оплате" : "Всё оплачено"}</span><b>${money(due || paidSum)}</b></div>
+      ${due ? payButtons() : ""}
+      <div class="row" style="margin-top:16px">
+        ${over && can("extend") ? `<button class="btn alt" id="coExt">⏩ Продлить</button>` : ""}
+        <button class="btn big" id="coOk" style="flex:1">${due ? (exit ? "Подтвердить оплату и выход" : "Подтвердить оплату") : "Отметить выход"}</button>
+      </div>
+    </div>`, (m) => {
+      if (due) mountPay(m, (x) => (method = x));
       $("[data-x]", m).onclick = close;
-      $("#fOk", m).onclick = () => { close(); done(); };
-    });
+      const ext = $("#coExt", m); if (ext) ext.onclick = () => { close(); extendDialog(v); };
+      $("#coOk", m).onclick = (e) => {
+        e.target.disabled = true;
+        if (due) payBills(open, method);
+        if (exit) finishVisit(v);
+        close(); render();
+        toast(`${esc(v.child)}: ${due ? `оплачено ${money(due)} (${methodName(method).toLowerCase()})` : "оплачено ранее"}${exit ? ", выход отмечен" : ""}`);
+      };
+    }, { side: true });
   }
+
+  function finishDialog(v) { checkoutPanel(v, true); }
 
   function printTicket(v) {
     if (!can("print")) return toast("Нет права печатать талоны", "bad");
@@ -650,7 +701,7 @@
     $("#grid").onclick = (e) => {
       const b = e.target.closest("[data-a]"); if (!b) return;
       const v = S.visits.find((x) => x.id === b.closest("[data-v]").dataset.v);
-      ({ extend: extendDialog, finish: finishDialog, bill: (v) => payDialog(openBills(v)), print: printTicket })[b.dataset.a](v);
+      ({ extend: extendDialog, finish: finishDialog, bill: (v) => checkoutPanel(v, false), print: printTicket })[b.dataset.a](v);
     };
   }
 
@@ -659,10 +710,10 @@
       const st = status(v), sum = visitBills(v).reduce((a, b) => a + billTotal(b), 0), paid = openBills(v).length === 0;
       return `<tr><td>№${v.no}</td><td><b>${esc(v.child)}</b></td><td>${dt(v.start)}</td><td>${hm(v.end)}</td><td>${v.exitAt ? hm(v.exitAt) : "—"}</td>
         <td>${st === "done" ? `<span class="tag grey">завершено</span>` : st === "bad" ? `<span class="tag red">просрочено</span>` : `<span class="tag green">на площадке</span>`}</td>
-        <td class="num">${money(sum)}</td><td>${paid ? `<span class="tag green">оплачен</span>` : `<span class="tag red">открыт</span>`}</td>
+        <td class="num">${money(sum)}</td><td>${paid ? `<span class="tag green">оплачен</span><br><small>${[...new Set(visitBills(v).map((b) => methodName(b.method)))].join(" + ")}</small>` : `<span class="tag red">открыт</span>`}</td>
         <td>${can("print") ? `<button class="btn sm ghost" data-p="${v.id}">Талон</button>` : ""}</td></tr>`;
     }).join("");
-    return shell("Посещения", "", `<div class="panel tbl"><table><thead><tr><th>№</th><th>Ребёнок</th><th>Начало</th><th>План. конец</th><th>Выход</th><th>Статус</th><th class="num">Сумма</th><th>Счёт</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>`);
+    return shell("Посещения", "", `<div class="panel tbl"><table><thead><tr><th>№</th><th>Ребёнок</th><th>Начало</th><th>План. конец</th><th>Выход</th><th>Статус</th><th class="num">Сумма</th><th>Оплата</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>`);
   }
   function mountVisits() {
     document.querySelectorAll("[data-p]").forEach((b) => (b.onclick = () => printTicket(S.visits.find((v) => v.id === b.dataset.p))));
@@ -740,22 +791,45 @@
     return ts >= t - 7 * 86400000;
   }
   function viewReports() {
-    const paid = S.bills.filter((b) => b.status === "paid" && inPeriod(b.paidAt));
+    const who = ui.repStaff || "all";
+    const mine = (sid) => who === "all" || sid === who;
+    const paid = S.bills.filter((b) => b.status === "paid" && inPeriod(b.paidAt) && mine(b.paidBy));
     const sum = (arr) => arr.reduce((a, b) => a + billTotal(b), 0);
     const cash = sum(paid.filter((b) => b.method === "cash")), card = sum(paid.filter((b) => b.method === "card"));
-    const refunds = S.refunds.filter((r) => inPeriod(r.at)).reduce((a, r) => a + r.amount, 0);
-    const exp = S.expenses.filter((e) => inPeriod(e.at)).reduce((a, e) => a + e.amount, 0);
+    const refs = S.refunds.filter((r) => inPeriod(r.at) && mine(r.staffId));
+    const refunds = refs.reduce((a, r) => a + r.amount, 0);
+    const exp = S.expenses.filter((e) => inPeriod(e.at) && mine(e.staffId)).reduce((a, e) => a + e.amount, 0);
     const extSum = paid.flatMap((b) => b.items).filter((i) => i.kind === "ext").reduce((a, i) => a + i.amount, 0);
     const started = S.visits.filter((v) => inPeriod(v.start)), finished = S.visits.filter((v) => inPeriod(v.exitAt));
     const unpaid = S.bills.filter((b) => b.status === "open").reduce((a, b) => a + billTotal(b), 0);
     const pop = {};
     started.forEach((v) => (pop[v.tariffName] = (pop[v.tariffName] || 0) + 1));
     const popRows = Object.entries(pop).sort((a, b) => b[1] - a[1]).map(([n, c]) => `<tr><td>${esc(n)}</td><td class="num">${c}</td></tr>`).join("");
-    const byStaff = {};
-    paid.forEach((b) => (byStaff[b.paidBy] = (byStaff[b.paidBy] || 0) + billTotal(b)));
-    const staffRows = Object.entries(byStaff).map(([u, s]) => `<tr><td>${esc(staffName(u))}</td><td class="num">${money(s)}</td></tr>`).join("");
-    return shell("Отчёты", `<div class="seg" id="pf">${[["today", "Сегодня"], ["yesterday", "Вчера"], ["week", "7 дней"]].map(([k, t]) => `<button data-f="${k}" class="${ui.period === k ? "on" : ""}">${t}</button>`).join("")}</div>`,
-      `<div class="panel"><h2>Деньги</h2><div class="kpis">
+
+    // Касса по кассирам: кто сколько принял наличными и картой
+    const by = {};
+    const row = (sid) => (by[sid] = by[sid] || { n: 0, cash: 0, card: 0, ref: 0 });
+    paid.forEach((b) => { const r = row(b.paidBy); r.n++; r[b.method] += billTotal(b); });
+    refs.forEach((x) => (row(x.staffId).ref += x.amount));
+    const cashierRows = Object.entries(by).map(([sid, r]) => `<tr><td><b>${esc(staffName(sid))}</b></td><td class="num">${r.n}</td><td class="num">${money(r.cash)}</td><td class="num">${money(r.card)}</td><td class="num">${r.ref ? "−" + money(r.ref) : "—"}</td><td class="num"><b>${money(r.cash + r.card - r.ref)}</b></td></tr>`).join("");
+
+    const shifts = S.shifts.filter((s) => mine(s.staffId) && (inPeriod(s.openedAt) || inPeriod(s.closedAt) || !s.closedAt));
+    const shiftRows = shifts.map((s) => {
+      const c = shiftCash(s), diff = s.closedAt ? s.countedCash - c.expected : null;
+      return `<tr><td>№${s.no}</td><td>${esc(staffName(s.staffId))}</td><td>${dt(s.openedAt)} – ${s.closedAt ? hm(s.closedAt) : `<span class="tag green">открыта</span>`}</td>
+        <td class="num">${money(c.cashIn)}</td><td class="num">${money(c.card)}</td><td class="num">${money(c.expected)}</td>
+        <td class="num">${s.closedAt ? money(s.countedCash) : "—"}</td><td class="num">${diff === null ? "—" : `<b style="color:${diff ? "var(--danger)" : "var(--ok)"}">${diff > 0 ? "+" : ""}${money(diff)}</b>`}</td></tr>`;
+    }).join("");
+
+    const payRows = [...paid].sort((a, b) => b.paidAt - a.paidAt).map((b) => {
+      const v = S.visits.find((x) => x.id === b.visitId) || {};
+      return `<tr><td>${dt(b.paidAt)}</td><td>${esc(v.child)}</td><td>№${b.no}<br><small>${b.items.map((i) => esc(i.title)).join(", ")}</small></td><td>${esc(staffName(b.paidBy))}</td>
+        <td><span class="tag ${b.method === "cash" ? "green" : ""}">${b.method === "cash" ? "💵 Наличные" : "💳 Карта"}</span></td><td class="num"><b>${money(billTotal(b))}</b></td></tr>`;
+    }).join("");
+
+    const staffOpts = `<select class="input" id="rs" style="padding:8px 10px"><option value="all">Все кассиры</option>${S.staff.map((u) => `<option value="${u.id}" ${who === u.id ? "selected" : ""}>${esc(u.name)}</option>`).join("")}</select>`;
+    return shell("Отчёты", `${staffOpts}<div class="seg" id="pf">${[["today", "Сегодня"], ["yesterday", "Вчера"], ["week", "7 дней"]].map(([k, t]) => `<button data-f="${k}" class="${ui.period === k ? "on" : ""}">${t}</button>`).join("")}</div>`,
+      `<div class="panel"><h2>Деньги${who === "all" ? "" : " — " + esc(staffName(who))}</h2><div class="kpis">
         <div class="kpi"><small>Получено всего</small><b>${money(cash + card)}</b></div>
         <div class="kpi"><small>💵 Наличные</small><b>${money(cash)}</b></div>
         <div class="kpi"><small>💳 Карта</small><b>${money(card)}</b></div>
@@ -766,15 +840,22 @@
         <div class="kpi"><small>Средний оплаченный счёт</small><b>${money(paid.length ? (cash + card) / paid.length : 0)}</b></div>
         <div class="kpi"><small>Открытые неоплаченные счета</small><b>${money(unpaid)}</b></div>
       </div><p style="color:var(--muted);font-size:13px">«Результат по внесённым расходам» — не чистая прибыль: учтены только расходы, внесённые в программу.</p></div>
+      <div class="panel tbl"><h2>Касса по кассирам</h2>${cashierRows ? `<table><thead><tr><th>Кассир</th><th class="num">Оплат</th><th class="num">💵 Наличные</th><th class="num">💳 Карта</th><th class="num">Возвраты</th><th class="num">Итого</th></tr></thead><tbody>${cashierRows}</tbody>
+        <tfoot><tr><td><b>Всего</b></td><td class="num"><b>${paid.length}</b></td><td class="num"><b>${money(cash)}</b></td><td class="num"><b>${money(card)}</b></td><td class="num"><b>${refunds ? "−" + money(refunds) : "—"}</b></td><td class="num"><b>${money(cash + card - refunds)}</b></td></tr></tfoot></table>` : "Нет оплат за период"}</div>
+      <div class="panel tbl"><h2>Смены и сверка кассы</h2>${shiftRows ? `<table><thead><tr><th>Смена</th><th>Кассир</th><th>Время</th><th class="num">Наличные</th><th class="num">Карта</th><th class="num">Ожидалось в кассе</th><th class="num">Факт</th><th class="num">Расхождение</th></tr></thead><tbody>${shiftRows}</tbody></table>` : "Нет смен за период"}</div>
       <div class="grid2">
         <div class="panel"><h2>Посещения</h2><div class="kpis">
           <div class="kpi"><small>Начато</small><b>${started.length}</b></div><div class="kpi"><small>Завершено</small><b>${finished.length}</b></div>
           <div class="kpi"><small>Сейчас на площадке</small><b>${S.visits.filter((v) => !v.exitAt).length}</b></div>
           <div class="kpi"><small>Продлений</small><b>${S.visits.flatMap((v) => v.ext).filter((e) => inPeriod(e.at)).length}</b></div></div></div>
-        <div class="panel tbl"><h2>Популярные тарифы</h2>${popRows ? `<table><tbody>${popRows}</tbody></table>` : "Нет данных"}
-          <h2 style="margin-top:16px">Оплаты по сотрудникам</h2>${staffRows ? `<table><tbody>${staffRows}</tbody></table>` : "Нет данных"}</div>
+        <div class="panel tbl"><h2>Популярные тарифы</h2>${popRows ? `<table><tbody>${popRows}</tbody></table>` : "Нет данных"}</div>
       </div>
+      <div class="panel tbl"><h2>Все оплаты</h2>${payRows ? `<table><thead><tr><th>Время</th><th>Ребёнок</th><th>Счёт</th><th>Кассир</th><th>Способ</th><th class="num">Сумма</th></tr></thead><tbody>${payRows}</tbody></table>` : "Нет оплат за период"}</div>
       <div class="panel tbl"><h2>Журнал действий</h2><table><tbody>${S.log.slice(0, 25).map((l) => `<tr><td>${dt(l.at)}</td><td>${esc(staffName(l.staffId))}</td><td><b>${esc(l.action)}</b></td><td>${esc(l.detail)}</td></tr>`).join("") || "<tr><td>Пока пусто</td></tr>"}</tbody></table></div>`);
+  }
+  function mountReports() {
+    $("#pf").onclick = (e) => { const b = e.target.closest("[data-f]"); if (b) { ui.period = b.dataset.f; render(); } };
+    $("#rs").onchange = (e) => { ui.repStaff = e.target.value; render(); };
   }
 
   function viewTariffs() {
@@ -839,7 +920,7 @@
         <label style="display:block;font-weight:800;margin:14px 0 6px">Предупреждать за, минут</label><input class="input" id="stW" type="number" min="1" max="30" value="${st.warn}">
         <div class="row" style="margin-top:16px"><button class="btn" id="stSave">Сохранить</button></div></div>
       <div class="panel"><h2>Цвета бренда</h2>
-        <div class="presets">${[["sunny", "Солнечная площадка", "#ff7a00"], ["candy", "Конфетти", "#7b5cff"], ["jungle", "Джунгли", "#0fb5a5"]].map(([k, n, c]) => `<button class="pick ${pal === k ? "on" : ""}" data-pal="${k}"><span style="display:inline-block;width:18px;height:18px;border-radius:50%;background:${c};vertical-align:middle"></span> <b style="display:inline">${n}</b></button>`).join("")}</div>
+        <div class="presets">${[["sunny", "Солнечная площадка", "#ff7a00"], ["candy", "Конфетти", "#7b5cff"], ["jungle", "Джунгли", "#0fb5a5"], ["night", "Ночь (как на макете)", "#2f62f0"]].map(([k, n, c]) => `<button class="pick ${pal === k ? "on" : ""}" data-pal="${k}"><span style="display:inline-block;width:18px;height:18px;border-radius:50%;background:${c};vertical-align:middle"></span> <b style="display:inline">${n}</b></button>`).join("")}</div>
         <h2 style="margin-top:20px">Демо-данные</h2><p style="color:var(--muted)">Данные демо хранятся только в этом браузере.</p><button class="btn danger" id="stReset">Сбросить демо</button></div></div>`);
   }
   function mountSettings() {
@@ -856,7 +937,7 @@
 
   const VIEWS = {
     floor: [viewFloor, mountFloor], visits: [viewVisits, mountVisits], bills: [viewBills, mountBills], shifts: [viewShifts, mountShifts],
-    expenses: [viewExpenses, () => ($("#ax").onclick = expenseDialog)], reports: [viewReports, () => ($("#pf").onclick = (e) => { const b = e.target.closest("[data-f]"); if (b) { ui.period = b.dataset.f; render(); } })],
+    expenses: [viewExpenses, () => ($("#ax").onclick = expenseDialog)], reports: [viewReports, mountReports],
     tariffs: [viewTariffs, mountTariffs], staff: [viewStaff, mountStaff], settings: [viewSettings, mountSettings],
   };
 
@@ -865,6 +946,7 @@
     if (!u || !u.active) { S.currentUserId = null; return viewLogin(); }
     const nav = NAV.find((n) => n[0] === ui.route);
     if (!nav || (nav[3] && !can(nav[3]))) ui.route = "floor"; // права проверяются и при прямом переходе по ссылке
+    if (location.hash.slice(1) !== ui.route) history.replaceState(null, "", "#" + ui.route);
     const [view, mount] = VIEWS[ui.route];
     $("#root").innerHTML = view();
     mount();
