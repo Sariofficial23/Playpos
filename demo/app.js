@@ -1,0 +1,872 @@
+/* PlayPos — демо-версия программы для детской площадки.
+ * Все данные хранятся только в этом браузере (localStorage) — это демо для показа интерфейса.
+ * В рабочей версии источник истины — сервер и PostgreSQL (см. PLAN.md). */
+(function () {
+  "use strict";
+
+  const STORE = "playpos-demo-v1";
+  const PALETTE = "playpos-palette";
+  const TZ = "Asia/Tashkent";
+  const MIN = 60000;
+
+  /* ---------- Права доступа ---------- */
+  const PERMS = [
+    ["Касса", "sell", "Продажа", "Новое посещение и выбор тарифа"],
+    ["Касса", "extend", "Продление времени", "Кнопка «Продлить» с доплатой"],
+    ["Касса", "pay", "Приём оплаты", "Закрытие счёта: наличные или карта"],
+    ["Касса", "finish", "Завершение посещения", "Отметить выход ребёнка"],
+    ["Касса", "print", "Печать талона", "Талон 58/80 мм"],
+    ["Касса", "shift", "Своя смена", "Открытие и закрытие кассовой смены"],
+    ["Управление", "reports", "Отчёты", "Выручка, посещения, итоги смен"],
+    ["Управление", "expenses", "Расходы", "Добавление расходов"],
+    ["Управление", "refunds", "Возвраты", "Возврат денег по оплаченному счёту"],
+    ["Управление", "tariffs", "Тарифы", "Создание и архив тарифов"],
+    ["Управление", "staff", "Сотрудники", "Создание кассиров и выдача прав"],
+    ["Управление", "settings", "Настройки площадки", "Название, принтер, звук"],
+  ];
+  const ROLES = {
+    owner: { name: "Владелец", perms: PERMS.map((p) => p[1]) },
+    admin: { name: "Администратор", perms: ["sell", "extend", "pay", "finish", "print", "shift", "reports", "expenses", "refunds", "tariffs"] },
+    cashier: { name: "Кассир", perms: ["sell", "extend", "pay", "finish", "print", "shift"] },
+  };
+  const permsOf = (role) => Object.fromEntries(PERMS.map((p) => [p[1], ROLES[role].perms.includes(p[1])]));
+
+  const NAV = [
+    ["floor", "🎠", "Площадка", null],
+    ["visits", "🧒", "Посещения", null],
+    ["bills", "🧾", "Счета", "pay"],
+    ["shifts", "🗄️", "Смены", "shift"],
+    ["expenses", "💸", "Расходы", "expenses"],
+    ["reports", "📊", "Отчёты", "reports"],
+    ["tariffs", "🎟️", "Тарифы", "tariffs"],
+    ["staff", "👥", "Сотрудники", "staff"],
+    ["settings", "⚙️", "Настройки", "settings"],
+  ];
+
+  /* Готовые наборы тарифов — типичные схемы игровых площадок */
+  const PRESETS = [
+    { name: "Короткие сеансы", desc: "Для ТРЦ и фудкортов: родители рядом, дети играют недолго.",
+      items: [["10 минут", 10, 10000], ["20 минут", 20, 18000], ["30 минут", 30, 25000]] },
+    { name: "Почасовой", desc: "Классика: полчаса, час, два часа.",
+      items: [["30 минут", 30, 25000], ["1 час", 60, 40000], ["2 часа", 120, 70000]] },
+    { name: "Безлимит + продления", desc: "Весь день и короткие доплаты при задержке.",
+      items: [["Безлимит на день", 600, 120000], ["+10 минут", 10, 8000, "ext"], ["+30 минут", 30, 20000, "ext"]] },
+  ];
+
+  /* ---------- Состояние ---------- */
+  let S;
+  const ui = { route: "floor", search: "", billFilter: "open", period: "today", user: null, soundCtx: null, notified: {}, sig: "" };
+
+  function seed() {
+    const t = Date.now();
+    const s = {
+      seq: 100,
+      settings: { venue: "Kids Jungle — Чиланзар", paper: "80", warn: 5, sound: true },
+      tariffs: [
+        { id: "t1", name: "10 минут", minutes: 10, price: 10000, use: "both", archived: false },
+        { id: "t2", name: "20 минут", minutes: 20, price: 18000, use: "both", archived: false },
+        { id: "t3", name: "30 минут", minutes: 30, price: 25000, use: "both", archived: false },
+        { id: "t4", name: "1 час", minutes: 60, price: 40000, use: "both", archived: false },
+        { id: "t5", name: "2 часа", minutes: 120, price: 70000, use: "base", archived: false },
+        { id: "t6", name: "Безлимит на день", minutes: 600, price: 120000, use: "base", archived: false },
+      ],
+      staff: [
+        { id: "u1", name: "Азиз", login: "aziz", pin: "1111", role: "owner", active: true, perms: permsOf("owner") },
+        { id: "u2", name: "Алия", login: "aliya", pin: "2222", role: "cashier", active: true, perms: permsOf("cashier") },
+        { id: "u3", name: "Тимур", login: "timur", pin: "3333", role: "cashier", active: false, perms: permsOf("cashier") },
+        { id: "u4", name: "Дилноза", login: "dilnoza", pin: "4444", role: "admin", active: true, perms: permsOf("admin") },
+      ],
+      visits: [], bills: [], refunds: [], expenses: [], log: [],
+      shifts: [{ id: "s1", no: 1, staffId: "u1", openedAt: t - 180 * MIN, closedAt: null, openingCash: 200000, countedCash: null }],
+    };
+    S = s;
+    const add = (child, bracelet, tid, startedAgo, paid, method) => {
+      const tr = s.tariffs.find((x) => x.id === tid);
+      const v = { id: id("v"), no: ++s.seq, child, bracelet, tariffName: tr.name, minutes: tr.minutes,
+        start: t - startedAgo * MIN, end: t - startedAgo * MIN + tr.minutes * MIN, exitAt: null, staffId: "u1", ext: [] };
+      s.visits.push(v);
+      const b = { id: id("b"), no: ++s.seq, visitId: v.id, items: [{ title: tr.name, amount: tr.price, kind: "base", minutes: tr.minutes }],
+        status: paid ? "paid" : "open", method: paid ? method : null, paidAt: paid ? v.start + MIN : null, paidBy: paid ? "u1" : null,
+        shiftId: paid ? "s1" : null, createdAt: v.start };
+      s.bills.push(b);
+      return v;
+    };
+    add("Юсуф", "12", "t3", 26, true, "cash");
+    add("Амина", "7", "t4", 64, false);
+    add("Саша", "17", "t5", 20, true, "card");
+    add("Лейла", "4", "t2", 4, false);
+    add("Мадина", "", "t6", 95, true, "cash");
+    const done = add("Ибрагим", "3", "t4", 150, true, "cash");
+    done.exitAt = done.end + 2 * MIN;
+    s.expenses.push({ id: id("e"), at: t - 120 * MIN, category: "Хозтовары", amount: 45000, comment: "Салфетки, антисептик", staffId: "u1", source: "cash", shiftId: "s1" });
+    s.currentUserId = null;
+    return s;
+  }
+
+  function load() {
+    try { const raw = localStorage.getItem(STORE); if (raw) return JSON.parse(raw); } catch (e) {}
+    return seed();
+  }
+  function save() { try { localStorage.setItem(STORE, JSON.stringify(S)); } catch (e) {} }
+  function id(p) { S.seq = (S.seq || 0) + 1; return p + S.seq + Math.random().toString(36).slice(2, 6); }
+
+  /* ---------- Утилиты ---------- */
+  const $ = (sel, el = document) => el.querySelector(sel);
+  const esc = (v) => String(v ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+  const money = (n) => Math.round(n).toLocaleString("ru-RU").replace(/ /g, " ") + " сум";
+  const hm = (ts) => new Date(ts).toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit", timeZone: TZ });
+  const dt = (ts) => new Date(ts).toLocaleString("ru-RU", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit", timeZone: TZ });
+  const dayKey = (ts) => new Date(ts).toLocaleDateString("en-CA", { timeZone: TZ });
+  function clock(ms) {
+    const s = Math.floor(Math.abs(ms) / 1000), h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), x = s % 60;
+    const p = (n) => String(n).padStart(2, "0");
+    return (h ? h + ":" + p(m) : p(m)) + ":" + p(x);
+  }
+  const me = () => S.staff.find((u) => u.id === S.currentUserId);
+  const can = (p) => { const u = me(); return !!u && u.active && (u.role === "owner" || !!u.perms[p]); };
+  const staffName = (sid) => (S.staff.find((u) => u.id === sid) || {}).name || "—";
+  const billTotal = (b) => b.items.reduce((a, i) => a + i.amount, 0);
+  const refunded = (b) => S.refunds.filter((r) => r.billId === b.id).reduce((a, r) => a + r.amount, 0);
+  const visitBills = (v) => S.bills.filter((b) => b.visitId === v.id && b.status !== "cancelled");
+  const openBills = (v) => visitBills(v).filter((b) => b.status === "open");
+  const myShift = () => S.shifts.find((s) => s.staffId === S.currentUserId && !s.closedAt);
+  const activeTariffs = (use) => S.tariffs.filter((t) => !t.archived && (t.use === "both" || t.use === use)).sort((a, b) => a.minutes - b.minutes);
+  function status(v) {
+    if (v.exitAt) return "done";
+    const left = v.end - Date.now();
+    if (left <= 0) return "bad";
+    if (left <= S.settings.warn * MIN || v.minutes <= S.settings.warn) return "warn";
+    return "ok";
+  }
+  function log(action, detail) { S.log.unshift({ at: Date.now(), staffId: S.currentUserId, action, detail }); S.log.length = Math.min(S.log.length, 300); }
+
+  function toast(msg, kind = "", actionLabel, action) {
+    const el = document.createElement("div");
+    el.className = "toast " + kind;
+    el.innerHTML = `<span style="flex:1">${msg}</span>`;
+    if (actionLabel) {
+      const b = document.createElement("button"); b.className = "btn sm sun"; b.textContent = actionLabel;
+      b.onclick = () => { el.remove(); action(); }; el.appendChild(b);
+    }
+    $("#toasts").appendChild(el);
+    setTimeout(() => el.remove(), actionLabel ? 9000 : 3500);
+  }
+
+  function beep() {
+    if (!S.settings.sound || !ui.soundCtx) return;
+    const ctx = ui.soundCtx;
+    [0, 0.35].forEach((d) => {
+      const o = ctx.createOscillator(), g = ctx.createGain();
+      o.frequency.value = 880; o.type = "triangle"; o.connect(g); g.connect(ctx.destination);
+      g.gain.setValueAtTime(0.0001, ctx.currentTime + d);
+      g.gain.exponentialRampToValueAtTime(0.4, ctx.currentTime + d + 0.02);
+      g.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + d + 0.28);
+      o.start(ctx.currentTime + d); o.stop(ctx.currentTime + d + 0.3);
+    });
+  }
+
+  /* ---------- Модальные окна ---------- */
+  function modal(html, mount) {
+    const m = $("#modal");
+    m.innerHTML = html; m.hidden = false;
+    m.onclick = (e) => { if (e.target === m) close(); };
+    if (mount) mount(m);
+    const f = m.querySelector("[autofocus]"); if (f) f.focus();
+  }
+  function close() { const m = $("#modal"); m.hidden = true; m.innerHTML = ""; }
+  document.addEventListener("keydown", (e) => { if (e.key === "Escape") close(); });
+
+  /* ---------- Бизнес-операции ---------- */
+  function requireShift() {
+    if (myShift()) return true;
+    if (!can("shift")) { toast("Нет открытой смены и нет права её открыть", "bad"); return false; }
+    openShiftDialog();
+    toast("Сначала откройте смену — деньги привязываются к смене", "warn");
+    return false;
+  }
+
+  function createVisit(child, bracelet, tariff) {
+    const t = Date.now();
+    const v = { id: id("v"), no: ++S.seq, child, bracelet, tariffName: tariff.name, minutes: tariff.minutes,
+      start: t, end: t + tariff.minutes * MIN, exitAt: null, staffId: S.currentUserId, ext: [] };
+    const b = { id: id("b"), no: ++S.seq, visitId: v.id, items: [{ title: tariff.name, amount: tariff.price, kind: "base", minutes: tariff.minutes }],
+      status: "open", method: null, paidAt: null, paidBy: null, shiftId: null, createdAt: t };
+    S.visits.push(v); S.bills.push(b);
+    log("Новое посещение", `${child}, ${tariff.name}, ${money(tariff.price)}`);
+    save();
+    return { v, b };
+  }
+
+  function extendVisit(v, tariff, from) {
+    const t = Date.now();
+    const base = from === "now" ? Math.max(t, v.end) : v.end;
+    const oldEnd = v.end;
+    v.end = base + tariff.minutes * MIN;
+    v.ext.push({ at: t, minutes: tariff.minutes, price: tariff.price, from, by: S.currentUserId });
+    const item = { title: "Продление: " + tariff.name, amount: tariff.price, kind: "ext", minutes: tariff.minutes };
+    let b = openBills(v)[0];
+    if (b) b.items.push(item);
+    else { b = { id: id("b"), no: ++S.seq, visitId: v.id, items: [item], status: "open", method: null, paidAt: null, paidBy: null, shiftId: null, createdAt: t }; S.bills.push(b); }
+    delete ui.notified[v.id + "w"]; delete ui.notified[v.id + "e"];
+    log("Продление", `${v.child}: +${tariff.minutes} мин (${hm(oldEnd)} → ${hm(v.end)}), ${money(tariff.price)}`);
+    save();
+    return b;
+  }
+
+  function payBills(bills, method) {
+    const sh = myShift();
+    const t = Date.now();
+    bills.forEach((b) => {
+      if (b.status !== "open") return; // защита от повторной оплаты
+      Object.assign(b, { status: "paid", method, paidAt: t, paidBy: S.currentUserId, shiftId: sh.id });
+      log("Оплата", `Счёт №${b.no}: ${money(billTotal(b))}, ${method === "cash" ? "наличные" : "карта"}`);
+    });
+    save();
+  }
+
+  function finishVisit(v) {
+    v.exitAt = Date.now();
+    log("Завершение", `${v.child} вышел(ла) в ${hm(v.exitAt)}`);
+    save();
+  }
+
+  /* ---------- Диалоги ---------- */
+  function newVisitDialog() {
+    if (!can("sell")) return toast("Нет права на продажу", "bad");
+    const tariffs = activeTariffs("base");
+    if (!tariffs.length) return toast("Сначала добавьте тарифы", "warn");
+    let sel = tariffs[Math.min(2, tariffs.length - 1)].id;
+    modal(`<div class="dlg">
+      <h2>Новое посещение</h2>
+      <label class="f">Имя ребёнка</label><input class="input" id="nvName" autofocus maxlength="60" placeholder="Например, Юсуф">
+      <label class="f">Браслет (необязательно)</label><input class="input" id="nvBr" maxlength="10" placeholder="№">
+      <label class="f">Тариф</label><div class="picks" id="nvT"></div>
+      <div class="summary" id="nvSum"></div>
+      <div class="foot">
+        <button class="btn ghost" data-x>Отмена</button>
+        <button class="btn alt" id="nvStart">Начать, оплата при выходе</button>
+        <button class="btn" id="nvPay">Начать и оплатить</button>
+      </div></div>`, (m) => {
+      const draw = () => {
+        $("#nvT", m).innerHTML = tariffs.map((t) => `<button class="pick ${t.id === sel ? "on" : ""}" data-t="${t.id}"><b>${esc(t.name)}</b><small>${money(t.price)}</small></button>`).join("");
+        const t = tariffs.find((x) => x.id === sel);
+        $("#nvSum", m).innerHTML = `Начало: <b>${hm(Date.now())}</b> · окончание: <b>${hm(Date.now() + t.minutes * MIN)}</b><br>К оплате: <b>${money(t.price)}</b>`;
+      };
+      draw();
+      $("#nvT", m).onclick = (e) => { const b = e.target.closest("[data-t]"); if (b) { sel = b.dataset.t; draw(); } };
+      $("[data-x]", m).onclick = close;
+      const go = (pay) => {
+        const name = $("#nvName", m).value.trim(), br = $("#nvBr", m).value.trim();
+        if (!name) return toast("Введите имя ребёнка", "bad");
+        if (br && S.visits.some((v) => !v.exitAt && v.bracelet === br)) return toast(`Браслет ${esc(br)} уже занят`, "bad");
+        if (pay && !requireShift()) return;
+        const { b } = createVisit(name, br, tariffs.find((x) => x.id === sel));
+        close(); render();
+        toast(`${esc(name)}: таймер запущен`);
+        if (pay) payDialog([b]);
+      };
+      $("#nvStart", m).onclick = () => go(false);
+      $("#nvPay", m).onclick = () => go(true);
+    });
+  }
+
+  function extendDialog(v) {
+    if (!can("extend")) return toast("Нет права на продление", "bad");
+    const tariffs = activeTariffs("ext");
+    if (!tariffs.length) return toast("Нет тарифов для продления", "warn");
+    let sel = tariffs[0].id, from = "prev";
+    const overdue = v.end < Date.now();
+    modal(`<div class="dlg">
+      <h2>Продлить время — ${esc(v.child)}</h2>
+      <div class="summary">Сейчас: окончание <b>${hm(v.end)}</b> ${overdue ? `<span class="tag red">просрочено на ${clock(Date.now() - v.end)}</span>` : `<span class="tag green">осталось ${clock(v.end - Date.now())}</span>`}</div>
+      <label class="f">На сколько продлить</label><div class="picks" id="exT"></div>
+      ${overdue ? `<label class="f">Отсчёт продления</label><div class="seg" id="exF"><button data-f="prev" class="on">От прежнего окончания</button><button data-f="now">От текущего времени</button></div>` : ""}
+      <div class="summary" id="exSum"></div>
+      <div class="foot"><button class="btn ghost" data-x>Отмена</button><button class="btn alt" id="exOk">Продлить</button><button class="btn" id="exPay">Продлить и оплатить</button></div>
+    </div>`, (m) => {
+      const draw = () => {
+        $("#exT", m).innerHTML = tariffs.map((t) => `<button class="pick ${t.id === sel ? "on" : ""}" data-t="${t.id}"><b>+${t.minutes} мин</b><small>${money(t.price)}</small></button>`).join("");
+        const t = tariffs.find((x) => x.id === sel);
+        const base = from === "now" ? Math.max(Date.now(), v.end) : v.end;
+        const ob = openBills(v)[0];
+        const due = openBills(v).reduce((a, b) => a + billTotal(b), 0) + t.price;
+        $("#exSum", m).innerHTML = `Новое окончание: <b>${hm(base + t.minutes * MIN)}</b><br>Доплата за продление: <b>+${money(t.price)}</b><br>` +
+          (ob ? `Добавится в открытый счёт №${ob.no}. Итого к оплате: <b>${money(due)}</b>` : `Прошлый счёт оплачен — создастся новый счёт на доплату.`);
+        if (overdue) m.querySelectorAll("#exF button").forEach((b) => b.classList.toggle("on", b.dataset.f === from));
+      };
+      draw();
+      $("#exT", m).onclick = (e) => { const b = e.target.closest("[data-t]"); if (b) { sel = b.dataset.t; draw(); } };
+      if (overdue) $("#exF", m).onclick = (e) => { const b = e.target.closest("[data-f]"); if (b) { from = b.dataset.f; draw(); } };
+      $("[data-x]", m).onclick = close;
+      const go = (pay) => {
+        if (pay && (!can("pay") || !requireShift())) return;
+        const t = tariffs.find((x) => x.id === sel);
+        extendVisit(v, t, from);
+        close(); render();
+        toast(`${esc(v.child)}: +${t.minutes} мин, +${money(t.price)}`);
+        if (pay) payDialog(openBills(v));
+      };
+      $("#exOk", m).onclick = () => go(false);
+      $("#exPay", m).onclick = () => go(true);
+    });
+  }
+
+  function payDialog(bills, after) {
+    if (!can("pay")) return toast("Нет права принимать оплату", "bad");
+    bills = bills.filter((b) => b.status === "open");
+    if (!bills.length) { if (after) after(); return; }
+    if (!requireShift()) return;
+    let method = "cash"; // при каждом открытии по умолчанию «Наличные»
+    const total = bills.reduce((a, b) => a + billTotal(b), 0);
+    modal(`<div class="dlg">
+      <h2>Закрыть счёт</h2>
+      ${bills.map((b) => `<div class="summary"><b>Счёт №${b.no}</b>${b.items.map((i) => `<div class="row" style="justify-content:space-between"><span>${esc(i.title)}</span><span>${money(i.amount)}</span></div>`).join("")}</div>`).join("")}
+      <div class="total"><span>Итого</span><b>${money(total)}</b></div>
+      <label class="f">Способ оплаты</label>
+      <div class="pay2" id="pm"><button class="pick on" data-m="cash">💵 Наличные</button><button class="pick" data-m="card">💳 Карта</button></div>
+      <p style="color:var(--muted);font-size:13px">Это только отметка, как получены деньги. Платёжные терминалы не подключаются.</p>
+      <div class="foot"><button class="btn ghost" data-x>Отмена</button><button class="btn" id="pOk">Подтвердить оплату</button></div>
+    </div>`, (m) => {
+      $("#pm", m).onclick = (e) => { const b = e.target.closest("[data-m]"); if (!b) return; method = b.dataset.m; m.querySelectorAll("#pm .pick").forEach((x) => x.classList.toggle("on", x === b)); };
+      $("[data-x]", m).onclick = close;
+      $("#pOk", m).onclick = (e) => {
+        e.target.disabled = true; // защита от двойного клика
+        payBills(bills, method);
+        close(); toast(`Оплачено ${money(total)} — ${method === "cash" ? "наличные" : "карта"}`);
+        if (after) after(); else render();
+      };
+    });
+  }
+
+  function finishDialog(v) {
+    if (!can("finish")) return toast("Нет права завершать посещения", "bad");
+    const ob = openBills(v);
+    const done = () => { finishVisit(v); render(); toast(`${esc(v.child)}: посещение завершено`); };
+    if (ob.length) {
+      if (!can("pay")) return toast("Есть неоплаченный счёт — нужен сотрудник с правом оплаты", "bad");
+      return payDialog(ob, done);
+    }
+    modal(`<div class="dlg"><h2>Завершить посещение?</h2>
+      <div class="summary">${esc(v.child)} · начало ${hm(v.start)} · окончание ${hm(v.end)}<br>Счета оплачены — повторно деньги не берутся.</div>
+      <div class="foot"><button class="btn ghost" data-x>Отмена</button><button class="btn" id="fOk">Завершить</button></div></div>`, (m) => {
+      $("[data-x]", m).onclick = close;
+      $("#fOk", m).onclick = () => { close(); done(); };
+    });
+  }
+
+  function printTicket(v) {
+    if (!can("print")) return toast("Нет права печатать талоны", "bad");
+    const bills = visitBills(v);
+    const unpaid = bills.some((b) => b.status === "open");
+    const ln = (a, b) => `<div class="ln"><span>${esc(a)}</span><span>${esc(b)}</span></div>`;
+    $("#print").innerHTML = `<div class="ticket" style="--paper:${S.settings.paper}mm">
+      <h3>${esc(S.settings.venue)}</h3><div class="c">Талон посещения №${v.no}</div><hr>
+      ${ln("Ребёнок", v.child)}${v.bracelet ? ln("Браслет", v.bracelet) : ""}${ln("Дата", new Date(v.start).toLocaleDateString("ru-RU", { timeZone: TZ }))}
+      ${ln("Начало", hm(v.start))}${ln("Окончание", hm(v.end))}${ln("Тариф", v.tariffName)}<hr>
+      ${bills.map((b) => `<div>Счёт №${b.no}</div>${b.items.map((i) => ln(i.title, money(i.amount))).join("")}${ln("Итого", money(billTotal(b)))}
+        ${b.status === "paid" ? ln("Оплачено", (b.method === "cash" ? "Наличные" : "Карта") + " " + dt(b.paidAt)) + ln("Кассир", staffName(b.paidBy)) : ln("Статус", "НЕ ОПЛАЧЕН")}<hr>`).join("")}
+      <div class="c">${unpaid ? "Счёт ещё открыт" : "Счёт оплачен"}</div>
+      <div class="c">Не является фискальным чеком</div></div>`;
+    log("Печать талона", `${v.child}, №${v.no}`);
+    setTimeout(() => window.print(), 50);
+  }
+
+  function openShiftDialog() {
+    modal(`<div class="dlg"><h2>Открыть смену</h2>
+      <label class="f">Начальный остаток в кассе</label><input class="input" id="osCash" type="number" min="0" step="1000" value="200000" autofocus>
+      <div class="foot"><button class="btn ghost" data-x>Отмена</button><button class="btn" id="osOk">Открыть смену</button></div></div>`, (m) => {
+      $("[data-x]", m).onclick = close;
+      $("#osOk", m).onclick = () => {
+        const cash = Math.max(0, Math.round(+$("#osCash", m).value || 0));
+        S.shifts.push({ id: id("s"), no: S.shifts.length + 1, staffId: S.currentUserId, openedAt: Date.now(), closedAt: null, openingCash: cash, countedCash: null });
+        log("Открытие смены", money(cash)); save(); close(); render(); toast("Смена открыта");
+      };
+    });
+  }
+
+  function shiftCash(sh) {
+    const cashIn = S.bills.filter((b) => b.shiftId === sh.id && b.status === "paid" && b.method === "cash").reduce((a, b) => a + billTotal(b), 0);
+    const card = S.bills.filter((b) => b.shiftId === sh.id && b.status === "paid" && b.method === "card").reduce((a, b) => a + billTotal(b), 0);
+    const ref = S.refunds.filter((r) => r.shiftId === sh.id && r.method === "cash").reduce((a, r) => a + r.amount, 0);
+    const exp = S.expenses.filter((e) => e.shiftId === sh.id && e.source === "cash").reduce((a, e) => a + e.amount, 0);
+    return { cashIn, card, ref, exp, expected: sh.openingCash + cashIn - ref - exp };
+  }
+
+  function staffDialog(u) {
+    const isNew = !u;
+    const d = u ? JSON.parse(JSON.stringify(u)) : { name: "", login: "", pin: "", role: "cashier", active: true, perms: permsOf("cashier") };
+    const owner = d.role === "owner";
+    let group = "";
+    modal(`<div class="dlg wide"><h2>${isNew ? "Новый сотрудник" : "Сотрудник: " + esc(d.name)}</h2>
+      <div class="grid2">
+        <div><label class="f">Имя</label><input class="input" id="sfName" value="${esc(d.name)}" maxlength="40" ${isNew ? "autofocus" : ""}></div>
+        <div><label class="f">Роль</label><select class="input" id="sfRole" ${owner ? "disabled" : ""}>
+          ${owner ? `<option value="owner">Владелец</option>` : ""}
+          <option value="cashier" ${d.role === "cashier" ? "selected" : ""}>Кассир</option>
+          <option value="admin" ${d.role === "admin" ? "selected" : ""}>Администратор</option></select></div>
+        <div><label class="f">Логин</label><input class="input" id="sfLogin" value="${esc(d.login)}" maxlength="30"></div>
+        <div><label class="f">PIN / пароль</label><input class="input" id="sfPin" value="${esc(d.pin)}" maxlength="20" placeholder="минимум 4 символа"></div>
+      </div>
+      <label class="f">Права доступа ${owner ? "<span class='tag'>у владельца все права</span>" : "<span class='tag'>при смене роли права заполняются шаблоном — их можно изменить</span>"}</label>
+      <div class="perm-list" id="sfPerms">${PERMS.map(([g, key, title, hint]) => {
+        const head = g !== group ? `<div class="perm-group">${(group = g)}</div>` : "";
+        return head + `<label class="perm"><div><b>${title}</b><small>${hint}</small></div><span class="switch"><input type="checkbox" data-p="${key}" ${owner || d.perms[key] ? "checked" : ""} ${owner ? "disabled" : ""}><span></span></span></label>`;
+      }).join("")}</div>
+      <div class="foot"><button class="btn ghost" data-x>Отмена</button><button class="btn" id="sfOk">${isNew ? "Создать" : "Сохранить"}</button></div></div>`, (m) => {
+      $("[data-x]", m).onclick = close;
+      $("#sfRole", m).onchange = (e) => {
+        const p = permsOf(e.target.value);
+        m.querySelectorAll("[data-p]").forEach((c) => (c.checked = p[c.dataset.p]));
+      };
+      $("#sfOk", m).onclick = () => {
+        const name = $("#sfName", m).value.trim(), login = $("#sfLogin", m).value.trim().toLowerCase(), pin = $("#sfPin", m).value.trim();
+        if (!name || !login) return toast("Заполните имя и логин", "bad");
+        if (pin.length < 4) return toast("PIN — минимум 4 символа", "bad");
+        if (S.staff.some((x) => x.login === login && x.id !== d.id)) return toast("Такой логин уже есть", "bad");
+        const perms = {}; m.querySelectorAll("[data-p]").forEach((c) => (perms[c.dataset.p] = c.checked));
+        const role = owner ? "owner" : $("#sfRole", m).value;
+        if (isNew) { S.staff.push({ id: id("u"), name, login, pin, role, active: true, perms }); log("Сотрудник создан", `${name} (${ROLES[role].name})`); }
+        else { Object.assign(S.staff.find((x) => x.id === d.id), { name, login, pin, role, perms: owner ? permsOf("owner") : perms }); log("Права изменены", name); }
+        save(); close(); render(); toast(isNew ? "Сотрудник создан" : "Сохранено");
+      };
+    });
+  }
+
+  function tariffDialog(t) {
+    const isNew = !t;
+    const d = t || { name: "", minutes: 30, price: 25000, use: "both" };
+    modal(`<div class="dlg"><h2>${isNew ? "Новый тариф" : "Изменить тариф"}</h2>
+      <label class="f">Название</label><input class="input" id="tfName" value="${esc(d.name)}" placeholder="Например, 30 минут" autofocus maxlength="40">
+      <div class="grid2">
+        <div><label class="f">Длительность, минут</label><input class="input" id="tfMin" type="number" min="1" max="1440" value="${d.minutes}"></div>
+        <div><label class="f">Цена, сум</label><input class="input" id="tfPrice" type="number" min="0" step="1000" value="${d.price}"></div>
+      </div>
+      <label class="f">Где использовать</label>
+      <select class="input" id="tfUse">
+        <option value="both" ${d.use === "both" ? "selected" : ""}>Вход и продление</option>
+        <option value="base" ${d.use === "base" ? "selected" : ""}>Только вход</option>
+        <option value="ext" ${d.use === "ext" ? "selected" : ""}>Только продление</option>
+      </select>
+      <div class="summary" id="tfPpm"></div>
+      ${isNew ? "" : `<p style="color:var(--muted);font-size:13px">Изменение цены не меняет уже выставленные счета — в них сохранён снимок цены.</p>`}
+      <div class="foot"><button class="btn ghost" data-x>Отмена</button><button class="btn" id="tfOk">Сохранить</button></div></div>`, (m) => {
+      const ppm = () => { const mi = +$("#tfMin", m).value || 1, p = +$("#tfPrice", m).value || 0; $("#tfPpm", m).innerHTML = `Цена за минуту: <b>${money(p / mi)}</b> · за час: <b>${money((p / mi) * 60)}</b>`; };
+      ppm(); $("#tfMin", m).oninput = ppm; $("#tfPrice", m).oninput = ppm;
+      $("[data-x]", m).onclick = close;
+      $("#tfOk", m).onclick = () => {
+        const name = $("#tfName", m).value.trim(), minutes = Math.round(+$("#tfMin", m).value), price = Math.round(+$("#tfPrice", m).value);
+        if (!name || !(minutes > 0) || !(price >= 0)) return toast("Проверьте название, минуты и цену", "bad");
+        const use = $("#tfUse", m).value;
+        if (isNew) S.tariffs.push({ id: id("t"), name, minutes, price, use, archived: false });
+        else Object.assign(t, { name, minutes, price, use });
+        log(isNew ? "Тариф создан" : "Тариф изменён", `${name}: ${minutes} мин, ${money(price)}`);
+        save(); close(); render();
+      };
+    });
+  }
+
+  function expenseDialog() {
+    const sh = myShift();
+    modal(`<div class="dlg"><h2>Новый расход</h2>
+      <label class="f">Категория</label><select class="input" id="xCat">${["Хозтовары", "Аренда", "Зарплата", "Ремонт", "Реклама", "Прочее"].map((c) => `<option>${c}</option>`).join("")}</select>
+      <label class="f">Сумма, сум</label><input class="input" id="xAmt" type="number" min="1" step="1000" autofocus>
+      <label class="f">Комментарий</label><input class="input" id="xCom" maxlength="120">
+      <label class="f">Источник денег</label><select class="input" id="xSrc">
+        <option value="cash" ${sh ? "" : "disabled"}>Наличные из кассы текущей смены${sh ? "" : " (смена не открыта)"}</option>
+        <option value="other" ${sh ? "" : "selected"}>Другой источник (не из кассы)</option></select>
+      <div class="foot"><button class="btn ghost" data-x>Отмена</button><button class="btn" id="xOk">Добавить</button></div></div>`, (m) => {
+      $("[data-x]", m).onclick = close;
+      $("#xOk", m).onclick = () => {
+        const amount = Math.round(+$("#xAmt", m).value);
+        if (!(amount > 0)) return toast("Введите сумму", "bad");
+        const source = $("#xSrc", m).value;
+        S.expenses.push({ id: id("e"), at: Date.now(), category: $("#xCat", m).value, amount, comment: $("#xCom", m).value.trim(), staffId: S.currentUserId, source, shiftId: source === "cash" ? sh.id : null });
+        log("Расход", `${$("#xCat", m).value}: ${money(amount)}`);
+        save(); close(); render();
+      };
+    });
+  }
+
+  function refundDialog(b) {
+    const max = billTotal(b) - refunded(b);
+    if (max <= 0) return toast("По этому счёту уже всё возвращено", "warn");
+    if (!requireShift()) return;
+    modal(`<div class="dlg"><h2>Возврат по счёту №${b.no}</h2>
+      <div class="summary">Оплачено: <b>${money(billTotal(b))}</b> (${b.method === "cash" ? "наличные" : "карта"}) · можно вернуть: <b>${money(max)}</b></div>
+      <label class="f">Сумма возврата</label><input class="input" id="rAmt" type="number" min="1" max="${max}" value="${max}" autofocus>
+      <label class="f">Причина (обязательно)</label><input class="input" id="rWhy" maxlength="120">
+      <div class="foot"><button class="btn ghost" data-x>Отмена</button><button class="btn danger" id="rOk">Оформить возврат</button></div></div>`, (m) => {
+      $("[data-x]", m).onclick = close;
+      $("#rOk", m).onclick = () => {
+        const amount = Math.round(+$("#rAmt", m).value), reason = $("#rWhy", m).value.trim();
+        if (!(amount > 0) || amount > max) return toast(`Сумма от 1 до ${money(max)}`, "bad");
+        if (!reason) return toast("Укажите причину", "bad");
+        S.refunds.push({ id: id("r"), billId: b.id, amount, reason, at: Date.now(), staffId: S.currentUserId, shiftId: myShift().id, method: b.method });
+        log("Возврат", `Счёт №${b.no}: ${money(amount)} — ${reason}`);
+        save(); close(); render(); toast("Возврат оформлен");
+      };
+    });
+  }
+
+  /* ---------- Экраны ---------- */
+  function viewLogin() {
+    let sel = null;
+    $("#root").innerHTML = `<div class="login"><div class="login-box">
+      <a class="logo" href="index.html">${logoMark()}<span>Play<b>Pos</b></span></a>
+      <h2 style="margin:18px 0 4px">Вход сотрудника</h2>
+      <p style="color:var(--muted);margin:0">Демо: PIN владельца Азиза — <b>1111</b>, кассира Алии — <b>2222</b>, администратора Дилнозы — <b>4444</b>. Тимур заблокирован.</p>
+      <div class="users" id="lu">${S.staff.map((u) => `<button class="user" data-u="${u.id}" ${u.active ? "" : "disabled"}>
+        <span class="ava">${esc(u.name[0])}</span><b>${esc(u.name)}</b><small>${ROLES[u.role].name}${u.active ? "" : " · заблокирован"}</small></button>`).join("")}</div>
+      <div class="row"><input class="input" id="lp" type="password" inputmode="numeric" placeholder="PIN" style="flex:1"><button class="btn" id="lgo">Войти</button></div>
+      <p style="margin-top:18px"><a href="index.html">← на сайт</a></p></div></div>`;
+    $("#lu").onclick = (e) => {
+      const b = e.target.closest("[data-u]"); if (!b) return;
+      sel = b.dataset.u; document.querySelectorAll(".user").forEach((x) => x.classList.toggle("on", x === b)); $("#lp").focus();
+    };
+    const go = () => {
+      const u = S.staff.find((x) => x.id === sel);
+      if (!u) return toast("Выберите сотрудника", "bad");
+      if (!u.active) return toast("Сотрудник заблокирован", "bad");
+      if ($("#lp").value !== u.pin) return toast("Неверный PIN", "bad");
+      S.currentUserId = u.id; log("Вход", u.name); save(); ui.route = "floor"; render();
+    };
+    $("#lgo").onclick = go;
+    $("#lp").onkeydown = (e) => { if (e.key === "Enter") go(); };
+  }
+
+  const logoMark = () => `<span class="logo-mark"><svg width="18" height="20" viewBox="0 0 18 20"><path d="M3 2.5c0-1.2 1.3-1.9 2.3-1.3l11 7.5c.9.6.9 2 0 2.6l-11 7.5C4.3 19.4 3 18.7 3 17.5z" fill="#fff"/></svg></span>`;
+
+  function shell(title, actions, body) {
+    const u = me(), sh = myShift();
+    return `<div class="layout">
+      <aside class="side" id="side">
+        <a class="logo" href="index.html">${logoMark()}<span>Play<b>Pos</b></span></a>
+        ${NAV.filter((n) => !n[3] || can(n[3])).map((n) => `<a class="nav ${ui.route === n[0] ? "on" : ""}" href="#${n[0]}"><span class="em">${n[1]}</span>${n[2]}</a>`).join("")}
+        <div class="who"><b>${esc(u.name)}</b>${ROLES[u.role].name}<br>${sh ? `Смена №${sh.no} с ${hm(sh.openedAt)}` : "Смена не открыта"}
+          <div class="row" style="margin-top:8px"><button class="btn sm ghost" id="logout">Выйти</button></div></div>
+      </aside>
+      <main class="main">
+        <div class="top"><button class="btn sm ghost menu-btn" id="menu">☰</button><h1>${title}</h1>${actions}</div>
+        ${body}
+      </main></div>`;
+  }
+
+  function card(v) {
+    const st = status(v), left = v.end - Date.now();
+    const paid = openBills(v).length === 0;
+    const label = { ok: "Играет", warn: "Осталось мало времени", bad: "Время вышло — позовите ребёнка" }[st];
+    return `<div class="card ${st}" data-v="${v.id}">
+      <div class="head"><h3>${esc(v.child)}</h3><span class="chip ${paid ? "paid" : "open"}">${paid ? "✓ оплачен" : "● не оплачен"}</span></div>
+      <div class="time" data-t="${v.id}">${st === "bad" ? "+" : ""}${clock(left)}</div>
+      <div class="st">${label}</div>
+      <div class="meta">${v.bracelet ? "Браслет " + esc(v.bracelet) + " · " : ""}${hm(v.start)} → ${hm(v.end)} · ${esc(v.tariffName)}${v.ext.length ? ` · продлений: ${v.ext.length}` : ""}</div>
+      <div class="acts">
+        ${can("extend") ? `<button class="btn sm extend wide" data-a="extend">⏩ Продлить</button>` : ""}
+        ${can("finish") ? `<button class="btn sm" data-a="finish">Завершить</button>` : ""}
+        ${can("pay") && !paid ? `<button class="btn sm sun" data-a="bill">Счёт</button>` : ""}
+        ${can("print") ? `<button class="btn sm ghost" data-a="print">Талон</button>` : ""}
+      </div></div>`;
+  }
+
+  function floorCards() {
+    const q = ui.search.toLowerCase();
+    const order = { bad: 0, warn: 1, ok: 2 };
+    const list = S.visits.filter((v) => !v.exitAt && (!q || v.child.toLowerCase().includes(q) || v.bracelet === q))
+      .sort((a, b) => order[status(a)] - order[status(b)] || a.end - b.end);
+    return list.length ? list.map(card).join("") : `<div class="empty" style="grid-column:1/-1">Сейчас на площадке никого нет. Нажмите «Новое посещение».</div>`;
+  }
+
+  function viewFloor() {
+    const active = S.visits.filter((v) => !v.exitAt);
+    const over = active.filter((v) => status(v) === "bad").length;
+    const today = dayKey(Date.now());
+    const paidToday = S.bills.filter((b) => b.status === "paid" && dayKey(b.paidAt) === today).reduce((a, b) => a + billTotal(b), 0);
+    const unpaid = S.bills.filter((b) => b.status === "open").reduce((a, b) => a + billTotal(b), 0);
+    return shell("Площадка",
+      `<button class="btn ghost sm" id="snd">${ui.soundCtx && S.settings.sound ? "🔔 Звук включён" : "🔕 Включить звук"}</button>${can("sell") ? `<button class="btn" id="nv">＋ Новое посещение</button>` : ""}`,
+      `${!myShift() && can("shift") ? `<div class="banner">Смена не открыта — оплату принять нельзя.<button class="btn sm" id="os">Открыть смену</button></div>` : ""}
+      <div class="stats">
+        <div class="stat"><small>Детей на площадке</small><b>${active.length}</b></div>
+        <div class="stat"><small>Просрочено</small><b style="color:${over ? "var(--danger)" : "inherit"}">${over}</b></div>
+        <div class="stat"><small>Не оплачено</small><b>${money(unpaid)}</b></div>
+        <div class="stat"><small>Получено сегодня</small><b>${can("reports") ? money(paidToday) : "—"}</b></div>
+      </div>
+      <div class="bar"><input class="input" id="q" placeholder="Поиск по имени или номеру браслета" value="${esc(ui.search)}"></div>
+      <div class="cards" id="grid">${floorCards()}</div>`);
+  }
+
+  function mountFloor() {
+    const nv = $("#nv"); if (nv) nv.onclick = newVisitDialog;
+    const os = $("#os"); if (os) os.onclick = openShiftDialog;
+    $("#snd").onclick = () => {
+      try { ui.soundCtx = ui.soundCtx || new (window.AudioContext || window.webkitAudioContext)(); ui.soundCtx.resume(); } catch (e) {}
+      S.settings.sound = true; save(); beep(); render(); toast("Звук включён — это тестовый сигнал");
+    };
+    $("#q").oninput = (e) => { ui.search = e.target.value; $("#grid").innerHTML = floorCards(); };
+    $("#grid").onclick = (e) => {
+      const b = e.target.closest("[data-a]"); if (!b) return;
+      const v = S.visits.find((x) => x.id === b.closest("[data-v]").dataset.v);
+      ({ extend: extendDialog, finish: finishDialog, bill: (v) => payDialog(openBills(v)), print: printTicket })[b.dataset.a](v);
+    };
+  }
+
+  function viewVisits() {
+    const rows = [...S.visits].sort((a, b) => b.start - a.start).map((v) => {
+      const st = status(v), sum = visitBills(v).reduce((a, b) => a + billTotal(b), 0), paid = openBills(v).length === 0;
+      return `<tr><td>№${v.no}</td><td><b>${esc(v.child)}</b>${v.bracelet ? `<br><small>браслет ${esc(v.bracelet)}</small>` : ""}</td><td>${dt(v.start)}</td><td>${hm(v.end)}</td><td>${v.exitAt ? hm(v.exitAt) : "—"}</td>
+        <td>${st === "done" ? `<span class="tag grey">завершено</span>` : st === "bad" ? `<span class="tag red">просрочено</span>` : `<span class="tag green">на площадке</span>`}</td>
+        <td class="num">${money(sum)}</td><td>${paid ? `<span class="tag green">оплачен</span>` : `<span class="tag red">открыт</span>`}</td>
+        <td>${can("print") ? `<button class="btn sm ghost" data-p="${v.id}">Талон</button>` : ""}</td></tr>`;
+    }).join("");
+    return shell("Посещения", "", `<div class="panel tbl"><table><thead><tr><th>№</th><th>Ребёнок</th><th>Начало</th><th>План. конец</th><th>Выход</th><th>Статус</th><th class="num">Сумма</th><th>Счёт</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>`);
+  }
+  function mountVisits() {
+    document.querySelectorAll("[data-p]").forEach((b) => (b.onclick = () => printTicket(S.visits.find((v) => v.id === b.dataset.p))));
+  }
+
+  function viewBills() {
+    const f = ui.billFilter;
+    const list = S.bills.filter((b) => f === "all" || b.status === f).sort((a, b) => b.createdAt - a.createdAt);
+    const rows = list.map((b) => {
+      const v = S.visits.find((x) => x.id === b.visitId) || {};
+      const r = refunded(b);
+      return `<tr><td>№${b.no}</td><td>${esc(v.child)}</td><td>${b.items.map((i) => esc(i.title)).join("<br>")}</td><td class="num"><b>${money(billTotal(b))}</b>${r ? `<br><small style="color:var(--danger)">возврат −${money(r)}</small>` : ""}</td>
+        <td>${b.status === "paid" ? `<span class="tag green">оплачен</span><br><small>${b.method === "cash" ? "наличные" : "карта"} · ${dt(b.paidAt)} · ${esc(staffName(b.paidBy))}</small>` : `<span class="tag red">открыт</span>`}</td>
+        <td>${b.status === "open" ? `<button class="btn sm" data-pay="${b.id}">Оплатить</button>` : can("refunds") ? `<button class="btn sm ghost" data-ref="${b.id}">Возврат</button>` : ""}</td></tr>`;
+    }).join("");
+    return shell("Счета", `<div class="seg" id="bf">${[["open", "Открытые"], ["paid", "Оплаченные"], ["all", "Все"]].map(([k, t]) => `<button data-f="${k}" class="${f === k ? "on" : ""}">${t}</button>`).join("")}</div>`,
+      `<div class="panel tbl">${rows ? `<table><thead><tr><th>№</th><th>Ребёнок</th><th>Позиции</th><th class="num">Сумма</th><th>Статус</th><th></th></tr></thead><tbody>${rows}</tbody></table>` : `<div class="empty">Счетов нет</div>`}</div>`);
+  }
+  function mountBills() {
+    $("#bf").onclick = (e) => { const b = e.target.closest("[data-f]"); if (b) { ui.billFilter = b.dataset.f; render(); } };
+    document.querySelectorAll("[data-pay]").forEach((b) => (b.onclick = () => payDialog([S.bills.find((x) => x.id === b.dataset.pay)])));
+    document.querySelectorAll("[data-ref]").forEach((b) => (b.onclick = () => refundDialog(S.bills.find((x) => x.id === b.dataset.ref))));
+  }
+
+  function viewShifts() {
+    const sh = myShift();
+    let cur = `<div class="panel"><h2>Моя смена</h2><p>Смена не открыта.</p><button class="btn" id="os">Открыть смену</button></div>`;
+    if (sh) {
+      const c = shiftCash(sh);
+      cur = `<div class="panel"><h2>Смена №${sh.no} · открыта ${dt(sh.openedAt)}</h2>
+        <div class="kpis">
+          <div class="kpi"><small>Начальный остаток</small><b>${money(sh.openingCash)}</b></div>
+          <div class="kpi"><small>Наличные оплаты</small><b>${money(c.cashIn)}</b></div>
+          <div class="kpi"><small>Карта (не в кассе)</small><b>${money(c.card)}</b></div>
+          <div class="kpi"><small>Возвраты наличными</small><b>−${money(c.ref)}</b></div>
+          <div class="kpi"><small>Расходы из кассы</small><b>−${money(c.exp)}</b></div>
+          <div class="kpi hl"><small>Ожидается в кассе</small><b>${money(c.expected)}</b></div>
+        </div>
+        <label style="display:block;font-weight:800;margin:16px 0 6px">Фактически наличных в кассе</label>
+        <div class="row"><input class="input" id="cc" type="number" min="0" step="1000" placeholder="${c.expected}"><button class="btn" id="cs">Закрыть смену</button></div>
+        <p style="color:var(--muted);font-size:13px">Дети на площадке и открытые счета не пропадают после закрытия смены — их продолжит следующая смена.</p></div>`;
+    }
+    const rows = [...S.shifts].reverse().map((s) => {
+      const c = shiftCash(s), diff = s.closedAt ? s.countedCash - c.expected : null;
+      return `<tr><td>№${s.no}</td><td>${esc(staffName(s.staffId))}</td><td>${dt(s.openedAt)}</td><td>${s.closedAt ? dt(s.closedAt) : `<span class="tag green">открыта</span>`}</td>
+        <td class="num">${money(c.cashIn)}</td><td class="num">${money(c.card)}</td><td class="num">${money(c.expected)}</td>
+        <td class="num">${s.closedAt ? money(s.countedCash) : "—"}</td><td class="num">${diff === null ? "—" : `<b style="color:${diff ? "var(--danger)" : "var(--ok)"}">${diff > 0 ? "+" : ""}${money(diff)}</b>`}</td></tr>`;
+    }).join("");
+    return shell("Смены", "", cur + `<div class="panel tbl"><h2>История смен</h2><table><thead><tr><th>№</th><th>Кассир</th><th>Открыта</th><th>Закрыта</th><th class="num">Наличные</th><th class="num">Карта</th><th class="num">Ожидалось</th><th class="num">Факт</th><th class="num">Расхождение</th></tr></thead><tbody>${rows}</tbody></table></div>`);
+  }
+  function mountShifts() {
+    const os = $("#os"); if (os) os.onclick = openShiftDialog;
+    const cs = $("#cs");
+    if (cs) cs.onclick = () => {
+      const sh = myShift(), v = $("#cc").value;
+      if (v === "") return toast("Введите фактическую сумму наличных", "bad");
+      sh.countedCash = Math.round(+v); sh.closedAt = Date.now();
+      const diff = sh.countedCash - shiftCash(sh).expected;
+      log("Закрытие смены", `№${sh.no}, расхождение ${money(diff)}`); save(); render();
+      toast(diff === 0 ? "Смена закрыта, касса сошлась ✓" : `Смена закрыта. Расхождение: ${money(diff)}`, diff ? "warn" : "");
+    };
+  }
+
+  function viewExpenses() {
+    const rows = [...S.expenses].sort((a, b) => b.at - a.at).map((e) => `<tr><td>${dt(e.at)}</td><td>${esc(e.category)}</td><td>${esc(e.comment)}</td><td>${e.source === "cash" ? "Касса смены" : "Другой источник"}</td><td>${esc(staffName(e.staffId))}</td><td class="num"><b>${money(e.amount)}</b></td></tr>`).join("");
+    return shell("Расходы", `<button class="btn" id="ax">＋ Добавить расход</button>`,
+      `<div class="panel tbl">${rows ? `<table><thead><tr><th>Дата</th><th>Категория</th><th>Комментарий</th><th>Источник</th><th>Автор</th><th class="num">Сумма</th></tr></thead><tbody>${rows}</tbody></table>` : `<div class="empty">Расходов пока нет</div>`}</div>`);
+  }
+
+  function inPeriod(ts) {
+    if (!ts) return false;
+    const k = dayKey(ts), t = Date.now();
+    if (ui.period === "today") return k === dayKey(t);
+    if (ui.period === "yesterday") return k === dayKey(t - 86400000);
+    return ts >= t - 7 * 86400000;
+  }
+  function viewReports() {
+    const paid = S.bills.filter((b) => b.status === "paid" && inPeriod(b.paidAt));
+    const sum = (arr) => arr.reduce((a, b) => a + billTotal(b), 0);
+    const cash = sum(paid.filter((b) => b.method === "cash")), card = sum(paid.filter((b) => b.method === "card"));
+    const refunds = S.refunds.filter((r) => inPeriod(r.at)).reduce((a, r) => a + r.amount, 0);
+    const exp = S.expenses.filter((e) => inPeriod(e.at)).reduce((a, e) => a + e.amount, 0);
+    const extSum = paid.flatMap((b) => b.items).filter((i) => i.kind === "ext").reduce((a, i) => a + i.amount, 0);
+    const started = S.visits.filter((v) => inPeriod(v.start)), finished = S.visits.filter((v) => inPeriod(v.exitAt));
+    const unpaid = S.bills.filter((b) => b.status === "open").reduce((a, b) => a + billTotal(b), 0);
+    const pop = {};
+    started.forEach((v) => (pop[v.tariffName] = (pop[v.tariffName] || 0) + 1));
+    const popRows = Object.entries(pop).sort((a, b) => b[1] - a[1]).map(([n, c]) => `<tr><td>${esc(n)}</td><td class="num">${c}</td></tr>`).join("");
+    const byStaff = {};
+    paid.forEach((b) => (byStaff[b.paidBy] = (byStaff[b.paidBy] || 0) + billTotal(b)));
+    const staffRows = Object.entries(byStaff).map(([u, s]) => `<tr><td>${esc(staffName(u))}</td><td class="num">${money(s)}</td></tr>`).join("");
+    return shell("Отчёты", `<div class="seg" id="pf">${[["today", "Сегодня"], ["yesterday", "Вчера"], ["week", "7 дней"]].map(([k, t]) => `<button data-f="${k}" class="${ui.period === k ? "on" : ""}">${t}</button>`).join("")}</div>`,
+      `<div class="panel"><h2>Деньги</h2><div class="kpis">
+        <div class="kpi"><small>Получено всего</small><b>${money(cash + card)}</b></div>
+        <div class="kpi"><small>💵 Наличные</small><b>${money(cash)}</b></div>
+        <div class="kpi"><small>💳 Карта</small><b>${money(card)}</b></div>
+        <div class="kpi"><small>в т.ч. продления</small><b>${money(extSum)}</b></div>
+        <div class="kpi"><small>Возвраты</small><b>−${money(refunds)}</b></div>
+        <div class="kpi"><small>Расходы</small><b>−${money(exp)}</b></div>
+        <div class="kpi hl"><small>Результат по внесённым расходам</small><b>${money(cash + card - refunds - exp)}</b></div>
+        <div class="kpi"><small>Средний оплаченный счёт</small><b>${money(paid.length ? (cash + card) / paid.length : 0)}</b></div>
+        <div class="kpi"><small>Открытые неоплаченные счета</small><b>${money(unpaid)}</b></div>
+      </div><p style="color:var(--muted);font-size:13px">«Результат по внесённым расходам» — не чистая прибыль: учтены только расходы, внесённые в программу.</p></div>
+      <div class="grid2">
+        <div class="panel"><h2>Посещения</h2><div class="kpis">
+          <div class="kpi"><small>Начато</small><b>${started.length}</b></div><div class="kpi"><small>Завершено</small><b>${finished.length}</b></div>
+          <div class="kpi"><small>Сейчас на площадке</small><b>${S.visits.filter((v) => !v.exitAt).length}</b></div>
+          <div class="kpi"><small>Продлений</small><b>${S.visits.flatMap((v) => v.ext).filter((e) => inPeriod(e.at)).length}</b></div></div></div>
+        <div class="panel tbl"><h2>Популярные тарифы</h2>${popRows ? `<table><tbody>${popRows}</tbody></table>` : "Нет данных"}
+          <h2 style="margin-top:16px">Оплаты по сотрудникам</h2>${staffRows ? `<table><tbody>${staffRows}</tbody></table>` : "Нет данных"}</div>
+      </div>
+      <div class="panel tbl"><h2>Журнал действий</h2><table><tbody>${S.log.slice(0, 25).map((l) => `<tr><td>${dt(l.at)}</td><td>${esc(staffName(l.staffId))}</td><td><b>${esc(l.action)}</b></td><td>${esc(l.detail)}</td></tr>`).join("") || "<tr><td>Пока пусто</td></tr>"}</tbody></table></div>`);
+  }
+
+  function viewTariffs() {
+    const list = [...S.tariffs].sort((a, b) => a.archived - b.archived || a.minutes - b.minutes);
+    const useName = { both: "вход и продление", base: "только вход", ext: "только продление" };
+    return shell("Тарифы", `<button class="btn" id="at">＋ Новый тариф</button>`,
+      `<div class="panel"><h2>Ваши тарифы</h2><div class="tariffs">${list.map((t) => `<div class="tariff ${t.archived ? "arch" : ""}">
+        <div class="mins">${t.minutes >= 60 && t.minutes % 60 === 0 ? t.minutes / 60 + " ч" : t.minutes + " мин"}</div>
+        <b>${esc(t.name)}</b><div class="pr">${money(t.price)}</div>
+        <small style="color:var(--muted)">${useName[t.use]} · ${money(t.price / t.minutes)}/мин</small>
+        <div class="row" style="margin-top:6px">${t.archived ? `<button class="btn sm ghost" data-r="${t.id}">Вернуть</button>` : `<button class="btn sm ghost" data-e="${t.id}">Изменить</button><button class="btn sm ghost" data-ar="${t.id}">В архив</button>`}</div>
+      </div>`).join("")}</div>
+      <p style="color:var(--muted);font-size:13px">Тарифы не удаляются, а архивируются: история посещений и счетов сохраняет цену на момент продажи.</p></div>
+      <div class="panel"><h2>Готовые шаблоны</h2><p style="color:var(--muted);margin-top:-6px">Типичные схемы игровых площадок. Добавьте и поправьте цены под свой рынок.</p>
+        <div class="presets">${PRESETS.map((p, i) => `<div class="preset"><h4>${p.name}</h4><p>${p.desc}</p><div style="font-size:13px;margin-bottom:10px">${p.items.map((x) => `${x[0]} — ${money(x[2])}`).join("<br>")}</div><button class="btn sm" data-pr="${i}">Добавить набор</button></div>`).join("")}</div></div>`);
+  }
+  function mountTariffs() {
+    $("#at").onclick = () => tariffDialog();
+    const t = (x) => S.tariffs.find((y) => y.id === x);
+    document.querySelectorAll("[data-e]").forEach((b) => (b.onclick = () => tariffDialog(t(b.dataset.e))));
+    document.querySelectorAll("[data-ar]").forEach((b) => (b.onclick = () => { t(b.dataset.ar).archived = true; log("Тариф в архиве", t(b.dataset.ar).name); save(); render(); }));
+    document.querySelectorAll("[data-r]").forEach((b) => (b.onclick = () => { t(b.dataset.r).archived = false; save(); render(); }));
+    document.querySelectorAll("[data-pr]").forEach((b) => (b.onclick = () => {
+      const p = PRESETS[+b.dataset.pr];
+      p.items.forEach(([name, minutes, price, use]) => {
+        if (!S.tariffs.some((x) => !x.archived && x.name === name && x.minutes === minutes)) S.tariffs.push({ id: id("t"), name, minutes, price, use: use || "both", archived: false });
+      });
+      log("Шаблон тарифов", p.name); save(); render(); toast(`Набор «${p.name}» добавлен`);
+    }));
+  }
+
+  function viewStaff() {
+    return shell("Сотрудники", `<button class="btn" id="as">＋ Добавить сотрудника</button>`,
+      `<div class="banner info">Откройте сотрудника, чтобы включить или выключить нужные права. Выключатель на карточке — блокировка входа.</div>
+      <div class="staff">${S.staff.map((u) => {
+        const on = PERMS.filter((p) => u.role === "owner" || u.perms[p[1]]);
+        const self = u.id === S.currentUserId;
+        return `<div class="person ${u.active ? "" : "off"}">
+          <div class="row"><span class="ava">${esc(u.name[0])}</span><div style="flex:1"><b style="font-size:17px">${esc(u.name)}</b><br><small style="color:var(--muted)">${ROLES[u.role].name} · ${esc(u.login)}</small></div>
+            <label class="switch" title="${u.active ? "Активен" : "Заблокирован"}"><input type="checkbox" data-act="${u.id}" ${u.active ? "checked" : ""} ${u.role === "owner" || self ? "disabled" : ""}><span></span></label></div>
+          <div class="perms-mini">${on.map((p) => `<span class="tag green">${p[2]}</span>`).join("")}${on.length === PERMS.length ? "" : PERMS.filter((p) => !on.includes(p)).map((p) => `<span class="tag grey">${p[2]}</span>`).join("")}</div>
+          <button class="btn sm ghost" data-ed="${u.id}">Открыть и настроить доступ</button></div>`;
+      }).join("")}</div>`);
+  }
+  function mountStaff() {
+    $("#as").onclick = () => staffDialog();
+    document.querySelectorAll("[data-ed]").forEach((b) => (b.onclick = () => staffDialog(S.staff.find((u) => u.id === b.dataset.ed))));
+    document.querySelectorAll("[data-act]").forEach((c) => (c.onchange = () => {
+      const u = S.staff.find((x) => x.id === c.dataset.act);
+      u.active = c.checked; log(u.active ? "Сотрудник разблокирован" : "Сотрудник заблокирован", u.name); save(); render();
+    }));
+  }
+
+  function viewSettings() {
+    let pal = "jungle"; try { pal = localStorage.getItem(PALETTE) || pal; } catch (e) {}
+    const st = S.settings;
+    return shell("Настройки", "", `<div class="grid2">
+      <div class="panel"><h2>Площадка</h2>
+        <label style="display:block;font-weight:800;margin:6px 0">Название (печатается на талоне)</label><input class="input" id="stV" value="${esc(st.venue)}" style="width:100%">
+        <label style="display:block;font-weight:800;margin:14px 0 6px">Ширина бумаги принтера</label>
+        <div class="seg" id="stP"><button data-v="58" class="${st.paper === "58" ? "on" : ""}">58 мм</button><button data-v="80" class="${st.paper === "80" ? "on" : ""}">80 мм</button></div>
+        <label style="display:block;font-weight:800;margin:14px 0 6px">Предупреждать за, минут</label><input class="input" id="stW" type="number" min="1" max="30" value="${st.warn}">
+        <div class="row" style="margin-top:16px"><button class="btn" id="stSave">Сохранить</button></div></div>
+      <div class="panel"><h2>Цвета бренда</h2>
+        <div class="presets">${[["sunny", "Солнечная площадка", "#ff7a00"], ["candy", "Конфетти", "#7b5cff"], ["jungle", "Джунгли", "#0fb5a5"]].map(([k, n, c]) => `<button class="pick ${pal === k ? "on" : ""}" data-pal="${k}"><span style="display:inline-block;width:18px;height:18px;border-radius:50%;background:${c};vertical-align:middle"></span> <b style="display:inline">${n}</b></button>`).join("")}</div>
+        <h2 style="margin-top:20px">Демо-данные</h2><p style="color:var(--muted)">Данные демо хранятся только в этом браузере.</p><button class="btn danger" id="stReset">Сбросить демо</button></div></div>`);
+  }
+  function mountSettings() {
+    let paper = S.settings.paper;
+    $("#stP").onclick = (e) => { const b = e.target.closest("[data-v]"); if (!b) return; paper = b.dataset.v; document.querySelectorAll("#stP button").forEach((x) => x.classList.toggle("on", x === b)); };
+    $("#stSave").onclick = () => {
+      S.settings.venue = $("#stV").value.trim() || S.settings.venue; S.settings.paper = paper;
+      S.settings.warn = Math.min(30, Math.max(1, Math.round(+$("#stW").value || 5)));
+      log("Настройки", "изменены"); save(); toast("Сохранено");
+    };
+    document.querySelectorAll("[data-pal]").forEach((b) => (b.onclick = () => { applyPalette(b.dataset.pal, true); render(); }));
+    $("#stReset").onclick = () => { if (confirm("Сбросить все демо-данные?")) { const uid = S.currentUserId; S = seed(); S.currentUserId = uid; save(); render(); } };
+  }
+
+  const VIEWS = {
+    floor: [viewFloor, mountFloor], visits: [viewVisits, mountVisits], bills: [viewBills, mountBills], shifts: [viewShifts, mountShifts],
+    expenses: [viewExpenses, () => ($("#ax").onclick = expenseDialog)], reports: [viewReports, () => ($("#pf").onclick = (e) => { const b = e.target.closest("[data-f]"); if (b) { ui.period = b.dataset.f; render(); } })],
+    tariffs: [viewTariffs, mountTariffs], staff: [viewStaff, mountStaff], settings: [viewSettings, mountSettings],
+  };
+
+  function render() {
+    const u = me();
+    if (!u || !u.active) { S.currentUserId = null; return viewLogin(); }
+    const nav = NAV.find((n) => n[0] === ui.route);
+    if (!nav || (nav[3] && !can(nav[3]))) ui.route = "floor"; // права проверяются и при прямом переходе по ссылке
+    const [view, mount] = VIEWS[ui.route];
+    $("#root").innerHTML = view();
+    mount();
+    $("#logout").onclick = () => { log("Выход", u.name); S.currentUserId = null; save(); close(); render(); };
+    $("#menu").onclick = () => $("#side").classList.toggle("open");
+    ui.sig = floorSig();
+  }
+
+  function applyPalette(p, persist) {
+    document.documentElement.dataset.palette = p;
+    if (persist) try { localStorage.setItem(PALETTE, p); } catch (e) {}
+  }
+
+  const floorSig = () => S.visits.filter((v) => !v.exitAt).map((v) => v.id + status(v)).join("|");
+
+  /* Таймер: каждую секунду пересчитываем остаток от сохранённого времени окончания */
+  function tick() {
+    if (!me()) return;
+    S.visits.filter((v) => !v.exitAt).forEach((v) => {
+      const st = status(v);
+      if (st === "warn" && !ui.notified[v.id + "w"]) {
+        ui.notified[v.id + "w"] = 1;
+        if (can("extend")) toast(`${esc(v.child)}: осталось меньше ${S.settings.warn} мин`, "warn", "Продлить", () => extendDialog(v));
+      }
+      if (st === "bad" && !ui.notified[v.id + "e"]) {
+        ui.notified[v.id + "e"] = 1; ui.notified[v.id + "w"] = 1;
+        beep();
+        toast(`⏰ ${esc(v.child)}: время вышло${v.bracelet ? " (браслет " + esc(v.bracelet) + ")" : ""}`, "bad", can("extend") ? "Продлить" : null, () => extendDialog(v));
+      }
+    });
+    if (ui.route !== "floor" || !$("#grid")) return;
+    if (floorSig() !== ui.sig) { ui.sig = floorSig(); $("#grid").innerHTML = floorCards(); return; }
+    document.querySelectorAll("[data-t]").forEach((el) => {
+      const v = S.visits.find((x) => x.id === el.dataset.t);
+      if (v) el.textContent = (status(v) === "bad" ? "+" : "") + clock(v.end - Date.now());
+    });
+  }
+
+  /* ---------- Запуск ---------- */
+  S = load();
+  try { applyPalette(localStorage.getItem(PALETTE) || "jungle"); } catch (e) {}
+  // Посещения, которые уже были просрочены при открытии, не должны сразу сыпать уведомлениями
+  S.visits.forEach((v) => { const st = status(v); if (st === "bad") ui.notified[v.id + "e"] = ui.notified[v.id + "w"] = 1; if (st === "warn") ui.notified[v.id + "w"] = 1; });
+  ui.route = (location.hash || "#floor").slice(1);
+  window.addEventListener("hashchange", () => { ui.route = location.hash.slice(1) || "floor"; close(); render(); });
+  window.addEventListener("storage", (e) => { if (e.key === STORE) { S = load(); render(); } }); // синхронизация между вкладками
+  render();
+  setInterval(tick, 1000);
+})();

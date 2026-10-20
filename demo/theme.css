@@ -1,0 +1,85 @@
+/* PlayPos — общие токены бренда. Три палитры переключаются атрибутом data-palette на <html>. */
+:root,
+:root[data-palette="jungle"] {
+  /* Вариант 3 «Джунгли» — выбран по умолчанию */
+  --brand: #0fb5a5;
+  --brand-ink: #0b8378;
+  --brand-2: #6c5ce7;
+  --accent: #ffc83d;
+  --ink: #15324a;
+  --muted: #5d7385;
+  --bg: #f2fbfa;
+  --surface: #ffffff;
+  --line: #dcecea;
+  --soft: #e3f7f4;
+}
+:root[data-palette="sunny"] {
+  /* Вариант 1 «Солнечная площадка» */
+  --brand: #ff7a00;
+  --brand-ink: #c95f00;
+  --brand-2: #1fa8e0;
+  --accent: #ffd23f;
+  --ink: #23324d;
+  --muted: #66728a;
+  --bg: #fff8ee;
+  --surface: #ffffff;
+  --line: #f1e4d2;
+  --soft: #fff0dc;
+}
+:root[data-palette="candy"] {
+  /* Вариант 2 «Конфетти» */
+  --brand: #7b5cff;
+  --brand-ink: #5b3ee0;
+  --brand-2: #ff4f9a;
+  --accent: #2ed8b6;
+  --ink: #2a2350;
+  --muted: #6b6690;
+  --bg: #f7f4ff;
+  --surface: #ffffff;
+  --line: #e6e0fb;
+  --soft: #efeaff;
+}
+:root {
+  /* Статусы таймера одинаковы во всех палитрах — их нельзя путать с брендом */
+  --ok: #16a34a;
+  --ok-bg: #e8f8ee;
+  --warn: #c98a00;
+  --warn-bg: #fff5d6;
+  --danger: #dc2638;
+  --danger-bg: #ffe6e9;
+  --radius: 18px;
+  --shadow: 0 6px 24px rgba(21, 50, 74, 0.08);
+  --font: "Nunito", system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+body {
+  font-family: var(--font);
+  color: var(--ink);
+  background: var(--bg);
+  -webkit-font-smoothing: antialiased;
+}
+a { color: var(--brand-ink); }
+button { font: inherit; cursor: pointer; }
+.logo {
+  display: inline-flex; align-items: center; gap: 10px;
+  font-weight: 900; font-size: 22px; letter-spacing: -0.5px; color: var(--ink); text-decoration: none;
+}
+.logo-mark {
+  width: 38px; height: 38px; border-radius: 12px; display: grid; place-items: center;
+  background: var(--brand); box-shadow: 4px 4px 0 var(--accent);
+}
+.logo b { color: var(--brand); }
+.btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+  border: 0; border-radius: 14px; padding: 12px 18px; font-weight: 800; font-size: 15px;
+  background: var(--brand); color: #fff; text-decoration: none; transition: transform .08s, filter .15s;
+}
+.btn:hover { filter: brightness(1.05); }
+.btn:active { transform: scale(.97); }
+.btn.ghost { background: var(--surface); color: var(--ink); border: 2px solid var(--line); }
+.btn.alt { background: var(--brand-2); }
+.btn.sun { background: var(--accent); color: var(--ink); }
+.btn.danger { background: var(--danger); }
+.btn.sm { padding: 8px 12px; font-size: 13px; border-radius: 11px; }
+.btn:disabled { opacity: .45; cursor: not-allowed; transform: none; }
