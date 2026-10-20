@@ -62,7 +62,7 @@
     const t = Date.now();
     const s = {
       seq: 100,
-      settings: { venue: "Kids Jungle — Чиланзар", paper: "80", warn: 5, sound: true },
+      settings: { venue: "Kids Jungle — Чиланзар", paper: "80", warn: 5, sound: true, autoReceipt: true },
       tariffs: [
         { id: "t1", name: "10 минут", minutes: 10, price: 10000, use: "both", archived: false },
         { id: "t2", name: "20 минут", minutes: 20, price: 18000, use: "both", archived: false },
@@ -365,6 +365,7 @@
       $("#pOk", m).onclick = (e) => {
         e.target.disabled = true; // защита от двойного клика
         payBills(bills, method);
+        if (S.settings.autoReceipt !== false) printReceipt(bills);
         close(); toast(`Оплачено ${money(total)} — ${methodName(method).toLowerCase()}`);
         if (after) after(); else render();
       };
@@ -400,7 +401,7 @@
       const ext = $("#coExt", m); if (ext) ext.onclick = () => { close(); extendDialog(v); };
       $("#coOk", m).onclick = (e) => {
         e.target.disabled = true;
-        if (due) payBills(open, method);
+        if (due) { payBills(open, method); if (S.settings.autoReceipt !== false) printReceipt(open); }
         if (exit) finishVisit(v);
         close(); render();
         toast(`${esc(v.child)}: ${due ? `оплачено ${money(due)} (${methodName(method).toLowerCase()})` : "оплачено ранее"}${exit ? ", выход отмечен" : ""}`);
@@ -410,21 +411,48 @@
 
   function finishDialog(v) { checkoutPanel(v, true); }
 
+  /* Печать на термопринтер 58/80 мм через системный диалог браузера.
+   * Для печати без диалога касса запускается в Chrome с флагом --kiosk-printing (см. README). */
+  function sendToPrinter(html) {
+    const paper = S.settings.paper === "58" ? 58 : 80;
+    let st = document.getElementById("pageSize");
+    if (!st) { st = document.createElement("style"); st.id = "pageSize"; document.head.appendChild(st); }
+    st.textContent = "@page { margin: 0 }"; // ширину ленты (58/80 мм) задаёт драйвер принтера
+    $("#print").innerHTML = `<div class="ticket" style="--paper:${paper === 80 ? 72 : 48}mm">${html}</div>`;
+    setTimeout(() => window.print(), 80);
+  }
+  const rln = (a, b) => `<div class="ln"><span>${esc(a)}</span><span>${esc(b)}</span></div>`;
+
+  /* Чек после закрытия счёта */
+  function printReceipt(bills) {
+    bills = bills.filter((b) => b.status === "paid");
+    if (!bills.length) return;
+    const v = S.visits.find((x) => x.id === bills[0].visitId) || {};
+    const b0 = bills[0], total = bills.reduce((a, b) => a + billTotal(b), 0);
+    sendToPrinter(`<h3>${esc(S.settings.venue)}</h3>
+      <div class="c">Чек № ${bills.map((b) => b.no).join(", ")}</div>
+      <div class="c">${new Date(b0.paidAt).toLocaleDateString("ru-RU", { timeZone: TZ })} ${hm(b0.paidAt)}</div><hr>
+      ${rln("Ребёнок", v.child || "")}${v.start ? rln("Время", hm(v.start) + "–" + hm(v.end)) : ""}<hr>
+      ${bills.flatMap((b) => b.items).map((i) => rln(i.title, money(i.amount))).join("")}<hr>
+      <div class="ln big"><span>ИТОГО</span><span>${money(total)}</span></div>
+      ${rln("Способ оплаты", methodName(b0.method))}${rln("Кассир", staffName(b0.paidBy))}<hr>
+      <div class="c">Не является фискальным чеком</div><div class="c">Спасибо за визит!</div>`);
+    log("Печать чека", `№${bills.map((b) => b.no).join(", ")}, ${money(total)}`);
+  }
+
   function printTicket(v) {
     if (!can("print")) return toast("Нет права печатать талоны", "bad");
     const bills = visitBills(v);
     const unpaid = bills.some((b) => b.status === "open");
     const ln = (a, b) => `<div class="ln"><span>${esc(a)}</span><span>${esc(b)}</span></div>`;
-    $("#print").innerHTML = `<div class="ticket" style="--paper:${S.settings.paper}mm">
-      <h3>${esc(S.settings.venue)}</h3><div class="c">Талон посещения №${v.no}</div><hr>
+    sendToPrinter(`<h3>${esc(S.settings.venue)}</h3><div class="c">Талон посещения №${v.no}</div><hr>
       ${ln("Ребёнок", v.child)}${ln("Дата", new Date(v.start).toLocaleDateString("ru-RU", { timeZone: TZ }))}
       ${ln("Начало", hm(v.start))}${ln("Окончание", hm(v.end))}${ln("Тариф", v.tariffName)}<hr>
       ${bills.map((b) => `<div>Счёт №${b.no}</div>${b.items.map((i) => ln(i.title, money(i.amount))).join("")}${ln("Итого", money(billTotal(b)))}
         ${b.status === "paid" ? ln("Оплачено", (b.method === "cash" ? "Наличные" : "Карта") + " " + dt(b.paidAt)) + ln("Кассир", staffName(b.paidBy)) : ln("Статус", "НЕ ОПЛАЧЕН")}<hr>`).join("")}
       <div class="c">${unpaid ? "Счёт ещё открыт" : "Счёт оплачен"}</div>
-      <div class="c">Не является фискальным чеком</div></div>`;
+      <div class="c">Не является фискальным чеком</div>`);
     log("Печать талона", `${v.child}, №${v.no}`);
-    setTimeout(() => window.print(), 50);
   }
 
   function openShiftDialog() {
@@ -727,7 +755,7 @@
       const r = refunded(b);
       return `<tr><td>№${b.no}</td><td>${esc(v.child)}</td><td>${b.items.map((i) => esc(i.title)).join("<br>")}</td><td class="num"><b>${money(billTotal(b))}</b>${r ? `<br><small style="color:var(--danger)">возврат −${money(r)}</small>` : ""}</td>
         <td>${b.status === "paid" ? `<span class="tag green">оплачен</span><br><small>${b.method === "cash" ? "наличные" : "карта"} · ${dt(b.paidAt)} · ${esc(staffName(b.paidBy))}</small>` : `<span class="tag red">открыт</span>`}</td>
-        <td>${b.status === "open" ? `<button class="btn sm" data-pay="${b.id}">Оплатить</button>` : can("refunds") ? `<button class="btn sm ghost" data-ref="${b.id}">Возврат</button>` : ""}</td></tr>`;
+        <td>${b.status === "open" ? `<button class="btn sm" data-pay="${b.id}">Оплатить</button>` : `${can("print") ? `<button class="btn sm ghost" data-rc="${b.id}">🖨 Чек</button> ` : ""}${can("refunds") ? `<button class="btn sm ghost" data-ref="${b.id}">Возврат</button>` : ""}`}</td></tr>`;
     }).join("");
     return shell("Счета", `<div class="seg" id="bf">${[["open", "Открытые"], ["paid", "Оплаченные"], ["all", "Все"]].map(([k, t]) => `<button data-f="${k}" class="${f === k ? "on" : ""}">${t}</button>`).join("")}</div>`,
       `<div class="panel tbl">${rows ? `<table><thead><tr><th>№</th><th>Ребёнок</th><th>Позиции</th><th class="num">Сумма</th><th>Статус</th><th></th></tr></thead><tbody>${rows}</tbody></table>` : `<div class="empty">Счетов нет</div>`}</div>`);
@@ -735,6 +763,7 @@
   function mountBills() {
     $("#bf").onclick = (e) => { const b = e.target.closest("[data-f]"); if (b) { ui.billFilter = b.dataset.f; render(); } };
     document.querySelectorAll("[data-pay]").forEach((b) => (b.onclick = () => payDialog([S.bills.find((x) => x.id === b.dataset.pay)])));
+    document.querySelectorAll("[data-rc]").forEach((b) => (b.onclick = () => printReceipt([S.bills.find((x) => x.id === b.dataset.rc)])));
     document.querySelectorAll("[data-ref]").forEach((b) => (b.onclick = () => refundDialog(S.bills.find((x) => x.id === b.dataset.ref))));
   }
 
@@ -917,6 +946,7 @@
         <label style="display:block;font-weight:800;margin:6px 0">Название (печатается на талоне)</label><input class="input" id="stV" value="${esc(st.venue)}" style="width:100%">
         <label style="display:block;font-weight:800;margin:14px 0 6px">Ширина бумаги принтера</label>
         <div class="seg" id="stP"><button data-v="58" class="${st.paper === "58" ? "on" : ""}">58 мм</button><button data-v="80" class="${st.paper === "80" ? "on" : ""}">80 мм</button></div>
+        <label class="perm" style="margin-top:14px"><div><b>Печатать чек после оплаты</b><small>Чек выходит сразу, когда кассир подтверждает оплату</small></div><span class="switch"><input type="checkbox" id="stR" ${st.autoReceipt !== false ? "checked" : ""}><span></span></span></label>
         <label style="display:block;font-weight:800;margin:14px 0 6px">Предупреждать за, минут</label><input class="input" id="stW" type="number" min="1" max="30" value="${st.warn}">
         <div class="row" style="margin-top:16px"><button class="btn" id="stSave">Сохранить</button></div></div>
       <div class="panel"><h2>Цвета бренда</h2>
@@ -929,6 +959,7 @@
     $("#stSave").onclick = () => {
       S.settings.venue = $("#stV").value.trim() || S.settings.venue; S.settings.paper = paper;
       S.settings.warn = Math.min(30, Math.max(1, Math.round(+$("#stW").value || 5)));
+      S.settings.autoReceipt = $("#stR").checked;
       log("Настройки", "изменены"); save(); toast("Сохранено");
     };
     document.querySelectorAll("[data-pal]").forEach((b) => (b.onclick = () => { applyPalette(b.dataset.pal, true); render(); }));

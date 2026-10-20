@@ -7,6 +7,9 @@
   const KEY = "playpos-lang";
   let lang = "ru";
   try { lang = localStorage.getItem(KEY) || "ru"; } catch (e) {}
+  // Ссылка вида ?lang=uz сразу открывает нужный язык (удобно отправлять клиенту)
+  const q = new URLSearchParams(location.search).get("lang");
+  if (q === "uz" || q === "ru") { lang = q; try { localStorage.setItem(KEY, q); } catch (e) {} }
   if (lang !== "uz") lang = "ru";
   document.documentElement.lang = lang;
 
@@ -187,7 +190,8 @@
     "Подписка для площадки": "Maydoncha uchun obuna", "Одна площадка — свои сотрудники, тарифы и отчёты. Доступ активируется ключом.": "Bitta maydoncha — o'z xodimlari, tariflari va hisobotlari. Kirish kalit bilan faollashtiriladi.",
     "1 месяц": "1 oy", "3 месяца": "3 oy", "— сум": "— so'm", "Все функции, без ограничений по сотрудникам.": "Barcha funksiyalar, xodimlar soni cheklanmagan.",
     "То же самое, оплата раз в квартал.": "Xuddi shunday, to'lov chorakda bir marta.", "Демо": "Demo", "© PlayPos · демо-версия · Ташкент": "© PlayPos · demo-versiya · Toshkent",
-    "Палитра:": "Palitra:", "Бренд-бук и варианты названия": "Brendbuk va nom variantlari", "Выгоднее": "Foydaliroq", "Ночь": "Tun",
+    "Палитра:": "Palitra:", "Бренд-бук и варианты названия": "Brendbuk va nom variantlari", "Выгоднее": "Foydaliroq", "Чек №": "Chek №", "ИТОГО": "JAMI", "Кассир": "Kassir", "Спасибо за визит!": "Tashrifingiz uchun rahmat!", "Печать чека": "Chek chop etish",
+    "🖨 Чек": "🖨 Chek", "Печатать чек после оплаты": "To'lovdan keyin chek chop etish", "Чек выходит сразу, когда кассир подтверждает оплату": "Kassir to'lovni tasdiqlashi bilan chek darhol chiqadi", "Ночь": "Tun",
     "PlayPos — касса и таймеры для детской площадки": "PlayPos — bolalar maydonchasi uchun kassa va taymerlar", "PlayPos — демо программы": "PlayPos — dastur demosi",
   };
 

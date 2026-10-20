@@ -132,8 +132,10 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
 .print-area { display: none; }
 @media print {
   body > *:not(.print-area) { display: none !important; }
+  html, body { background: #fff !important; }
   .print-area { display: block !important; font-family: "Courier New", monospace; color: #000; }
-  .ticket { width: var(--paper, 80mm); padding: 2mm; font-size: 12px; }
+  .ticket { width: var(--paper, 72mm); padding: 0 0 6mm; font-size: 12px; line-height: 1.35; }
+  .ticket .big { font-size: 15px; font-weight: 700; }
   .ticket h3 { text-align: center; margin: 0 0 4px; overflow-wrap: anywhere; }
   .ticket .ln { display: flex; justify-content: space-between; gap: 6px; }
   .ticket .ln span:first-child { overflow-wrap: anywhere; }
