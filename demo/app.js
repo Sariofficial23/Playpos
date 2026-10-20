@@ -569,10 +569,10 @@
     let sel = null;
     $("#root").innerHTML = `<div class="login"><div class="login-box">
       <a class="logo" href="index.html">${logoMark()}<span>Play<b>Pos</b></span></a>
-      <h2 style="margin:18px 0 4px">Вход сотрудника</h2>
+      <div style="float:right;margin-top:6px">${PPI18N.switcher()}</div><h2 style="margin:18px 0 4px">Вход сотрудника</h2>
       <p style="color:var(--muted);margin:0">Демо: PIN владельца Азиза — <b>1111</b>, кассира Алии — <b>2222</b>, администратора Дилнозы — <b>4444</b>. Тимур заблокирован.</p>
       <div class="users" id="lu">${S.staff.map((u) => `<button class="user" data-u="${u.id}" ${u.active ? "" : "disabled"}>
-        <span class="ava">${esc(u.name[0])}</span><b>${esc(u.name)}</b><small>${ROLES[u.role].name}${u.active ? "" : " · заблокирован"}</small></button>`).join("")}</div>
+        <span class="ava">${esc(PPI18N.tr(u.name)[0])}</span><b>${esc(u.name)}</b><small>${ROLES[u.role].name}${u.active ? "" : " · заблокирован"}</small></button>`).join("")}</div>
       <div class="row"><input class="input" id="lp" type="password" inputmode="numeric" placeholder="PIN" style="flex:1"><button class="btn" id="lgo">Войти</button></div>
       <p style="margin-top:18px"><a href="index.html">← на сайт</a></p></div></div>`;
     $("#lu").onclick = (e) => {
@@ -598,8 +598,8 @@
       <aside class="side" id="side">
         <a class="logo" href="index.html">${logoMark()}<span>Play<b>Pos</b></span></a>
         ${NAV.filter((n) => !n[3] || can(n[3])).map((n) => `<a class="nav ${ui.route === n[0] ? "on" : ""}" href="#${n[0]}"><span class="em">${n[1]}</span>${n[2]}</a>`).join("")}
-        <div class="who"><b>${esc(u.name)}</b>${ROLES[u.role].name}<br>${sh ? `Смена №${sh.no} с ${hm(sh.openedAt)}` : "Смена не открыта"}
-          <div class="row" style="margin-top:8px"><button class="btn sm ghost" id="logout">Выйти</button></div></div>
+        <div class="who"><b>${esc(u.name)}</b>${ROLES[u.role].name}<br>${sh ? `Смена №${sh.no}, открыта в ${hm(sh.openedAt)}` : "Смена не открыта"}
+          <div class="row" style="margin-top:8px"><button class="btn sm ghost" id="logout">Выйти</button>${PPI18N.switcher()}</div></div>
       </aside>
       <main class="main">
         <div class="top"><button class="btn sm ghost menu-btn" id="menu">☰</button><h1>${title}</h1>${actions}</div>
@@ -894,7 +894,7 @@
         const on = PERMS.filter((p) => u.role === "owner" || u.perms[p[1]]);
         const self = u.id === S.currentUserId;
         return `<div class="person ${u.active ? "" : "off"}">
-          <div class="row"><span class="ava">${esc(u.name[0])}</span><div style="flex:1"><b style="font-size:17px">${esc(u.name)}</b><br><small style="color:var(--muted)">${ROLES[u.role].name} · ${esc(u.login)}</small></div>
+          <div class="row"><span class="ava">${esc(PPI18N.tr(u.name)[0])}</span><div style="flex:1"><b style="font-size:17px">${esc(u.name)}</b><br><small style="color:var(--muted)">${ROLES[u.role].name} · ${esc(u.login)}</small></div>
             <label class="switch" title="${u.active ? "Активен" : "Заблокирован"}"><input type="checkbox" data-act="${u.id}" ${u.active ? "checked" : ""} ${u.role === "owner" || self ? "disabled" : ""}><span></span></label></div>
           <div class="perms-mini">${on.map((p) => `<span class="tag green">${p[2]}</span>`).join("")}${on.length === PERMS.length ? "" : PERMS.filter((p) => !on.includes(p)).map((p) => `<span class="tag grey">${p[2]}</span>`).join("")}</div>
           <button class="btn sm ghost" data-ed="${u.id}">Открыть и настроить доступ</button></div>`;
@@ -932,7 +932,7 @@
       log("Настройки", "изменены"); save(); toast("Сохранено");
     };
     document.querySelectorAll("[data-pal]").forEach((b) => (b.onclick = () => { applyPalette(b.dataset.pal, true); render(); }));
-    $("#stReset").onclick = () => { if (confirm("Сбросить все демо-данные?")) { const uid = S.currentUserId; S = seed(); S.currentUserId = uid; save(); render(); } };
+    $("#stReset").onclick = () => { if (confirm(PPI18N.tr("Сбросить все демо-данные?"))) { const uid = S.currentUserId; S = seed(); S.currentUserId = uid; save(); render(); } };
   }
 
   const VIEWS = {

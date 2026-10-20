@@ -8,6 +8,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@500;700;800;900&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="theme.css">
+<script src="i18n.js"></script>
 <style>
   .wrap { max-width: 1120px; margin: 0 auto; padding: 0 20px; }
   header { padding: 18px 0; }
@@ -70,6 +71,7 @@
       <a class="hide-m" href="#features">Возможности</a>
       <a class="hide-m" href="#pricing">Тарифы</a>
       <a class="hide-m" href="brand.html">Бренд</a>
+      <span id="langsw"></span>
       <a class="btn sm" href="app.html">Открыть демо</a>
     </nav>
   </div>
@@ -165,6 +167,7 @@
   const set = (p) => { document.documentElement.dataset.palette = p; try { localStorage.setItem(K, p); } catch (e) {} };
   try { const s = localStorage.getItem(K); if (s) document.documentElement.dataset.palette = s; } catch (e) {}
   document.querySelectorAll("[data-p]").forEach((b) => b.onclick = () => set(b.dataset.p));
+  document.getElementById("langsw").innerHTML = PPI18N.switcher();
 </script>
 </body>
 </html>
