@@ -411,17 +411,40 @@
 
   function finishDialog(v) { checkoutPanel(v, true); }
 
-  /* Печать на термопринтер 58/80 мм через системный диалог браузера.
-   * Для печати без диалога касса запускается в Chrome с флагом --kiosk-printing (см. README). */
-  function sendToPrinter(html) {
+  /* Печать чека/талона. Документ описывается строками, а печатается одним из двух способов:
+   * "windows" — через драйвер и системный диалог (без диалога: Chrome с --kiosk-printing, см. README);
+   * "usb" — напрямую в принтер командами ESC/POS через WebUSB (драйвер заменён на WinUSB через Zadig). */
+  const R = {
+    title: (t) => ({ k: "title", t }), center: (t) => ({ k: "center", t }), text: (t) => ({ k: "text", t }),
+    hr: () => ({ k: "hr" }), row: (a, b) => ({ k: "row", a, b }), big: (a, b) => ({ k: "big", a, b }),
+  };
+  function rowsHtml(rows) {
+    return rows.map((r) => ({
+      title: () => `<h3>${esc(r.t)}</h3>`, center: () => `<div class="c">${esc(r.t)}</div>`, text: () => `<div>${esc(r.t)}</div>`, hr: () => "<hr>",
+      row: () => `<div class="ln"><span>${esc(r.a)}</span><span>${esc(r.b)}</span></div>`, big: () => `<div class="ln big"><span>${esc(r.a)}</span><span>${esc(r.b)}</span></div>`,
+    })[r.k]()).join("");
+  }
+  function printWindows(rows) {
     const paper = S.settings.paper === "58" ? 58 : 80;
     let st = document.getElementById("pageSize");
     if (!st) { st = document.createElement("style"); st.id = "pageSize"; document.head.appendChild(st); }
     st.textContent = "@page { margin: 0 }"; // ширину ленты (58/80 мм) задаёт драйвер принтера
-    $("#print").innerHTML = `<div class="ticket" style="--paper:${paper === 80 ? 72 : 48}mm">${html}</div>`;
+    $("#print").innerHTML = `<div class="ticket" style="--paper:${paper === 80 ? 72 : 48}mm">${rowsHtml(rows)}</div>`;
     setTimeout(() => window.print(), 80);
   }
-  const rln = (a, b) => `<div class="ln"><span>${esc(a)}</span><span>${esc(b)}</span></div>`;
+  const trRow = (r) => ({ ...r, t: r.t && PPI18N.tr(r.t), a: r.a && PPI18N.tr(r.a), b: r.b && PPI18N.tr(r.b) });
+  async function sendToPrinter(rows, opts = {}) {
+    if (S.settings.printMode === "usb") {
+      try {
+        // В чек по USB текст идёт мимо страницы, поэтому переводим его здесь
+        await PPPrinter.print(rows.map(trRow), { paper: S.settings.paper, codepage: +S.settings.codepage || 17, drawer: !!opts.drawer });
+        return;
+      } catch (e) {
+        toast(`USB-принтер: ${esc(e.message || e)}. Печать через Windows.`, "warn");
+      }
+    }
+    printWindows(rows);
+  }
 
   /* Чек после закрытия счёта */
   function printReceipt(bills) {
@@ -429,14 +452,14 @@
     if (!bills.length) return;
     const v = S.visits.find((x) => x.id === bills[0].visitId) || {};
     const b0 = bills[0], total = bills.reduce((a, b) => a + billTotal(b), 0);
-    sendToPrinter(`<h3>${esc(S.settings.venue)}</h3>
-      <div class="c">Чек № ${bills.map((b) => b.no).join(", ")}</div>
-      <div class="c">${new Date(b0.paidAt).toLocaleDateString("ru-RU", { timeZone: TZ })} ${hm(b0.paidAt)}</div><hr>
-      ${rln("Ребёнок", v.child || "")}${v.start ? rln("Время", hm(v.start) + "–" + hm(v.end)) : ""}<hr>
-      ${bills.flatMap((b) => b.items).map((i) => rln(i.title, money(i.amount))).join("")}<hr>
-      <div class="ln big"><span>ИТОГО</span><span>${money(total)}</span></div>
-      ${rln("Способ оплаты", methodName(b0.method))}${rln("Кассир", staffName(b0.paidBy))}<hr>
-      <div class="c">Не является фискальным чеком</div><div class="c">Спасибо за визит!</div>`);
+    sendToPrinter([
+      R.title(S.settings.venue), R.center(`Чек № ${bills.map((b) => b.no).join(", ")}`),
+      R.center(`${new Date(b0.paidAt).toLocaleDateString("ru-RU", { timeZone: TZ })} ${hm(b0.paidAt)}`), R.hr(),
+      R.row("Ребёнок", v.child || ""), ...(v.start ? [R.row("Время", hm(v.start) + "–" + hm(v.end))] : []), R.hr(),
+      ...bills.flatMap((b) => b.items).map((i) => R.row(i.title, money(i.amount))), R.hr(),
+      R.big("ИТОГО", money(total)), R.row("Способ оплаты", methodName(b0.method)), R.row("Кассир", staffName(b0.paidBy)), R.hr(),
+      R.center("Не является фискальным чеком"), R.center("Спасибо за визит!"),
+    ], { drawer: S.settings.drawer && b0.method === "cash" });
     log("Печать чека", `№${bills.map((b) => b.no).join(", ")}, ${money(total)}`);
   }
 
@@ -444,14 +467,14 @@
     if (!can("print")) return toast("Нет права печатать талоны", "bad");
     const bills = visitBills(v);
     const unpaid = bills.some((b) => b.status === "open");
-    const ln = (a, b) => `<div class="ln"><span>${esc(a)}</span><span>${esc(b)}</span></div>`;
-    sendToPrinter(`<h3>${esc(S.settings.venue)}</h3><div class="c">Талон посещения №${v.no}</div><hr>
-      ${ln("Ребёнок", v.child)}${ln("Дата", new Date(v.start).toLocaleDateString("ru-RU", { timeZone: TZ }))}
-      ${ln("Начало", hm(v.start))}${ln("Окончание", hm(v.end))}${ln("Тариф", v.tariffName)}<hr>
-      ${bills.map((b) => `<div>Счёт №${b.no}</div>${b.items.map((i) => ln(i.title, money(i.amount))).join("")}${ln("Итого", money(billTotal(b)))}
-        ${b.status === "paid" ? ln("Оплачено", (b.method === "cash" ? "Наличные" : "Карта") + " " + dt(b.paidAt)) + ln("Кассир", staffName(b.paidBy)) : ln("Статус", "НЕ ОПЛАЧЕН")}<hr>`).join("")}
-      <div class="c">${unpaid ? "Счёт ещё открыт" : "Счёт оплачен"}</div>
-      <div class="c">Не является фискальным чеком</div>`);
+    sendToPrinter([
+      R.title(S.settings.venue), R.center(`Талон посещения №${v.no}`), R.hr(),
+      R.row("Ребёнок", v.child), R.row("Дата", new Date(v.start).toLocaleDateString("ru-RU", { timeZone: TZ })),
+      R.row("Начало", hm(v.start)), R.row("Окончание", hm(v.end)), R.row("Тариф", v.tariffName), R.hr(),
+      ...bills.flatMap((b) => [R.text(`Счёт №${b.no}`), ...b.items.map((i) => R.row(i.title, money(i.amount))), R.row("Итого", money(billTotal(b))),
+        ...(b.status === "paid" ? [R.row("Оплачено", methodName(b.method) + " " + dt(b.paidAt)), R.row("Кассир", staffName(b.paidBy))] : [R.row("Статус", "НЕ ОПЛАЧЕН")]), R.hr()]),
+      R.center(unpaid ? "Счёт ещё открыт" : "Счёт оплачен"), R.center("Не является фискальным чеком"),
+    ]);
     log("Печать талона", `${v.child}, №${v.no}`);
   }
 
@@ -946,6 +969,15 @@
         <label style="display:block;font-weight:800;margin:6px 0">Название (печатается на талоне)</label><input class="input" id="stV" value="${esc(st.venue)}" style="width:100%">
         <label style="display:block;font-weight:800;margin:14px 0 6px">Ширина бумаги принтера</label>
         <div class="seg" id="stP"><button data-v="58" class="${st.paper === "58" ? "on" : ""}">58 мм</button><button data-v="80" class="${st.paper === "80" ? "on" : ""}">80 мм</button></div>
+        <label style="display:block;font-weight:800;margin:14px 0 6px">Способ печати</label>
+        <div class="seg" id="stM"><button data-m="windows" class="${st.printMode !== "usb" ? "on" : ""}">Windows (драйвер)</button><button data-m="usb" class="${st.printMode === "usb" ? "on" : ""}">USB напрямую</button></div>
+        <div id="usbBox" class="summary" style="${st.printMode === "usb" ? "" : "display:none"}">
+          ${PPPrinter.supported() ? `<div>Принтер: <b id="usbName">${esc((PPPrinter.saved() || {}).name || "не подключён")}</b></div>
+          <div class="row" style="margin:8px 0"><button class="btn sm" id="usbConn">Подключить принтер</button><button class="btn sm ghost" id="usbTest">Тестовый чек</button></div>
+          <div class="row">Кодовая страница (ESC t) <input class="input" id="stCp" type="number" min="0" max="255" value="${st.codepage ?? 17}" style="width:90px"></div>
+          <label class="row" style="margin-top:8px"><input type="checkbox" id="stDr" ${st.drawer ? "checked" : ""}> Открывать денежный ящик при оплате наличными</label>` : `<b>Этот браузер не поддерживает USB-печать — откройте кассу в Chrome или Edge.</b>`}
+          <p class="note">Перед подключением замените драйвер принтера на WinUSB программой Zadig (как в Clopos). После этого обычная печать Windows на этот принтер работать не будет.</p>
+        </div>
         <label class="perm" style="margin-top:14px"><div><b>Печатать чек после оплаты</b><small>Чек выходит сразу, когда кассир подтверждает оплату</small></div><span class="switch"><input type="checkbox" id="stR" ${st.autoReceipt !== false ? "checked" : ""}><span></span></span></label>
         <label style="display:block;font-weight:800;margin:14px 0 6px">Предупреждать за, минут</label><input class="input" id="stW" type="number" min="1" max="30" value="${st.warn}">
         <div class="row" style="margin-top:16px"><button class="btn" id="stSave">Сохранить</button></div></div>
@@ -954,12 +986,33 @@
         <h2 style="margin-top:20px">Демо-данные</h2><p style="color:var(--muted)">Данные демо хранятся только в этом браузере.</p><button class="btn danger" id="stReset">Сбросить демо</button></div></div>`);
   }
   function mountSettings() {
-    let paper = S.settings.paper;
+    let paper = S.settings.paper, mode = S.settings.printMode || "windows";
+    $("#stM").onclick = (e) => {
+      const b = e.target.closest("[data-m]"); if (!b) return; mode = b.dataset.m;
+      document.querySelectorAll("#stM button").forEach((x) => x.classList.toggle("on", x === b));
+      $("#usbBox").style.display = mode === "usb" ? "" : "none";
+    };
+    const conn = $("#usbConn");
+    if (conn) conn.onclick = async () => {
+      try { const d = await PPPrinter.connect(); $("#usbName").textContent = d.productName || "USB-принтер"; toast("Принтер подключён"); }
+      catch (e) { toast(`Не удалось подключить: ${esc(e.message || e)}`, "bad"); }
+    };
+    const test = $("#usbTest");
+    if (test) test.onclick = async () => {
+      try {
+        await PPPrinter.print([R.title(S.settings.venue), R.center("Тестовый чек"), R.hr(), R.row("Принтер", "OK"), R.row("Кириллица", "Ёё Жж Щщ №"), R.hr(), R.center("PlayPos")].map(trRow),
+          { paper, codepage: +$("#stCp").value || 17, drawer: false });
+        toast("Тестовый чек отправлен");
+      } catch (e) { toast(`Ошибка печати: ${esc(e.message || e)}`, "bad"); }
+    };
     $("#stP").onclick = (e) => { const b = e.target.closest("[data-v]"); if (!b) return; paper = b.dataset.v; document.querySelectorAll("#stP button").forEach((x) => x.classList.toggle("on", x === b)); };
     $("#stSave").onclick = () => {
       S.settings.venue = $("#stV").value.trim() || S.settings.venue; S.settings.paper = paper;
       S.settings.warn = Math.min(30, Math.max(1, Math.round(+$("#stW").value || 5)));
       S.settings.autoReceipt = $("#stR").checked;
+      S.settings.printMode = mode;
+      if ($("#stCp")) S.settings.codepage = Math.min(255, Math.max(0, Math.round(+$("#stCp").value || 17)));
+      if ($("#stDr")) S.settings.drawer = $("#stDr").checked;
       log("Настройки", "изменены"); save(); toast("Сохранено");
     };
     document.querySelectorAll("[data-pal]").forEach((b) => (b.onclick = () => { applyPalette(b.dataset.pal, true); render(); }));

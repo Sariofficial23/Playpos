@@ -191,7 +191,13 @@
     "1 месяц": "1 oy", "3 месяца": "3 oy", "— сум": "— so'm", "Все функции, без ограничений по сотрудникам.": "Barcha funksiyalar, xodimlar soni cheklanmagan.",
     "То же самое, оплата раз в квартал.": "Xuddi shunday, to'lov chorakda bir marta.", "Демо": "Demo", "© PlayPos · демо-версия · Ташкент": "© PlayPos · demo-versiya · Toshkent",
     "Палитра:": "Palitra:", "Бренд-бук и варианты названия": "Brendbuk va nom variantlari", "Выгоднее": "Foydaliroq", "Чек №": "Chek №", "ИТОГО": "JAMI", "Кассир": "Kassir", "Спасибо за визит!": "Tashrifingiz uchun rahmat!", "Печать чека": "Chek chop etish",
-    "🖨 Чек": "🖨 Chek", "Печатать чек после оплаты": "To'lovdan keyin chek chop etish", "Чек выходит сразу, когда кассир подтверждает оплату": "Kassir to'lovni tasdiqlashi bilan chek darhol chiqadi", "Ночь": "Tun",
+    "🖨 Чек": "🖨 Chek", "Способ печати": "Chop etish usuli", "Windows (драйвер)": "Windows (drayver)", "USB напрямую": "To'g'ridan-to'g'ri USB",
+    "Принтер:": "Printer:", "не подключён": "ulanmagan", "Подключить принтер": "Printerni ulash", "Тестовый чек": "Sinov cheki",
+    "Кодовая страница (ESC t)": "Kod sahifasi (ESC t)", "Открывать денежный ящик при оплате наличными": "Naqd to'lovda pul qutisini ochish",
+    "Этот браузер не поддерживает USB-печать — откройте кассу в Chrome или Edge.": "Bu brauzer USB orqali chop etishni qo'llamaydi — kassani Chrome yoki Edge'da oching.",
+    "Перед подключением замените драйвер принтера на WinUSB программой Zadig (как в Clopos). После этого обычная печать Windows на этот принтер работать не будет.": "Ulashdan oldin Zadig dasturi orqali printer drayverini WinUSB'ga almashtiring (Clopos'dagi kabi). Shundan so'ng bu printerga oddiy Windows chop etishi ishlamaydi.",
+    "Принтер подключён": "Printer ulandi", "Тестовый чек отправлен": "Sinov cheki yuborildi", "Принтер": "Printer", "Кириллица": "Kirill", "Не удалось подключить:": "Ulab bo'lmadi:",
+    "Ошибка печати:": "Chop etish xatosi:", "USB-принтер:": "USB printer:", ". Печать через Windows.": ". Windows orqali chop etiladi.", "Принтер не подключён": "Printer ulanmagan", "Печатать чек после оплаты": "To'lovdan keyin chek chop etish", "Чек выходит сразу, когда кассир подтверждает оплату": "Kassir to'lovni tasdiqlashi bilan chek darhol chiqadi", "Ночь": "Tun",
     "PlayPos — касса и таймеры для детской площадки": "PlayPos — bolalar maydonchasi uchun kassa va taymerlar", "PlayPos — демо программы": "PlayPos — dastur demosi",
   };
 
