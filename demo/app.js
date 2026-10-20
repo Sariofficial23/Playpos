@@ -56,7 +56,7 @@
 
   /* ---------- Состояние ---------- */
   let S;
-  const ui = { layout: "list", route: "floor", search: "", billFilter: "open", period: "today", user: null, soundCtx: null, notified: {}, sig: "" };
+  const ui = { cat: "all", layout: "list", route: "floor", search: "", billFilter: "open", period: "today", user: null, soundCtx: null, notified: {}, sig: "" };
 
   function seed() {
     const t = Date.now();
@@ -81,9 +81,9 @@
       shifts: [{ id: "s1", no: 1, staffId: "u1", openedAt: t - 180 * MIN, closedAt: null, openingCash: 200000, countedCash: null }],
     };
     S = s;
-    const add = (child, bracelet, tid, startedAgo, paid, method) => {
+    const add = (child, _, tid, startedAgo, paid, method) => {
       const tr = s.tariffs.find((x) => x.id === tid);
-      const v = { id: id("v"), no: ++s.seq, child, bracelet, tariffName: tr.name, minutes: tr.minutes,
+      const v = { id: id("v"), no: ++s.seq, child, tariffName: tr.name, minutes: tr.minutes,
         start: t - startedAgo * MIN, end: t - startedAgo * MIN + tr.minutes * MIN, exitAt: null, staffId: "u1", ext: [] };
       s.visits.push(v);
       const b = { id: id("b"), no: ++s.seq, visitId: v.id, items: [{ title: tr.name, amount: tr.price, kind: "base", minutes: tr.minutes }],
@@ -192,9 +192,9 @@
     return false;
   }
 
-  function createVisit(child, bracelet, tariff) {
+  function createVisit(child, tariff) {
     const t = Date.now();
-    const v = { id: id("v"), no: ++S.seq, child, bracelet, tariffName: tariff.name, minutes: tariff.minutes,
+    const v = { id: id("v"), no: ++S.seq, child, tariffName: tariff.name, minutes: tariff.minutes,
       start: t, end: t + tariff.minutes * MIN, exitAt: null, staffId: S.currentUserId, ext: [] };
     const b = { id: id("b"), no: ++S.seq, visitId: v.id, items: [{ title: tariff.name, amount: tariff.price, kind: "base", minutes: tariff.minutes }],
       status: "open", method: null, paidAt: null, paidBy: null, shiftId: null, createdAt: t };
@@ -246,7 +246,6 @@
     modal(`<div class="dlg">
       <h2>Новое посещение</h2>
       <label class="f">Имя ребёнка</label><input class="input" id="nvName" autofocus maxlength="60" placeholder="Например, Юсуф">
-      <label class="f">Браслет (необязательно)</label><input class="input" id="nvBr" maxlength="10" placeholder="№">
       <label class="f">Тариф</label><div class="picks" id="nvT"></div>
       <div class="summary" id="nvSum"></div>
       <div class="foot">
@@ -263,11 +262,10 @@
       $("#nvT", m).onclick = (e) => { const b = e.target.closest("[data-t]"); if (b) { sel = b.dataset.t; draw(); } };
       $("[data-x]", m).onclick = close;
       const go = (pay) => {
-        const name = $("#nvName", m).value.trim(), br = $("#nvBr", m).value.trim();
+        const name = $("#nvName", m).value.trim();
         if (!name) return toast("Введите имя ребёнка", "bad");
-        if (br && S.visits.some((v) => !v.exitAt && v.bracelet === br)) return toast(`Браслет ${esc(br)} уже занят`, "bad");
         if (pay && !requireShift()) return;
-        const { b } = createVisit(name, br, tariffs.find((x) => x.id === sel));
+        const { b } = createVisit(name, tariffs.find((x) => x.id === sel));
         close(); render();
         toast(`${esc(name)}: таймер запущен`);
         if (pay) payDialog([b]);
@@ -368,7 +366,7 @@
     const ln = (a, b) => `<div class="ln"><span>${esc(a)}</span><span>${esc(b)}</span></div>`;
     $("#print").innerHTML = `<div class="ticket" style="--paper:${S.settings.paper}mm">
       <h3>${esc(S.settings.venue)}</h3><div class="c">Талон посещения №${v.no}</div><hr>
-      ${ln("Ребёнок", v.child)}${v.bracelet ? ln("Браслет", v.bracelet) : ""}${ln("Дата", new Date(v.start).toLocaleDateString("ru-RU", { timeZone: TZ }))}
+      ${ln("Ребёнок", v.child)}${ln("Дата", new Date(v.start).toLocaleDateString("ru-RU", { timeZone: TZ }))}
       ${ln("Начало", hm(v.start))}${ln("Окончание", hm(v.end))}${ln("Тариф", v.tariffName)}<hr>
       ${bills.map((b) => `<div>Счёт №${b.no}</div>${b.items.map((i) => ln(i.title, money(i.amount))).join("")}${ln("Итого", money(billTotal(b)))}
         ${b.status === "paid" ? ln("Оплачено", (b.method === "cash" ? "Наличные" : "Карта") + " " + dt(b.paidAt)) + ln("Кассир", staffName(b.paidBy)) : ln("Статус", "НЕ ОПЛАЧЕН")}<hr>`).join("")}
@@ -561,12 +559,12 @@
   function card(v) {
     const st = status(v), left = v.end - Date.now();
     const paid = openBills(v).length === 0;
-    const label = { ok: "Играет", warn: "Осталось мало времени", bad: "Время вышло — позовите ребёнка" }[st];
+    const label = { ok: "Играет", warn: "Скоро заканчивается", bad: "Время вышло — позовите ребёнка" }[st];
     return `<div class="card ${st}" data-v="${v.id}">
       <div class="head"><h3>${esc(v.child)}</h3><span class="chip ${paid ? "paid" : "open"}">${paid ? "✓ оплачен" : "● не оплачен"}</span></div>
       <div class="time" data-t="${v.id}">${st === "bad" ? "+" : ""}${clock(left)}</div>
       <div class="st">${label}</div>
-      <div class="meta">${v.bracelet ? "Браслет " + esc(v.bracelet) + " · " : ""}${hm(v.start)} → ${hm(v.end)} · ${esc(v.tariffName)}${v.ext.length ? ` · продлений: ${v.ext.length}` : ""}</div>
+      <div class="meta">${hm(v.start)} → ${hm(v.end)} · ${esc(v.tariffName)}${v.ext.length ? ` · продлений: ${v.ext.length}` : ""}</div>
       <div class="acts">
         ${can("extend") ? `<button class="btn sm extend wide" data-a="extend">⏩ Продлить</button>` : ""}
         ${can("finish") ? `<button class="btn sm" data-a="finish">Завершить</button>` : ""}
@@ -575,12 +573,24 @@
       </div></div>`;
   }
 
+  /* Категории площадки — фильтр над списком */
+  const CATS = [["all", "Все"], ["bad", "Время вышло"], ["warn", "Скоро заканчивается"], ["ok", "Играет"], ["unpaid", "Не оплачены"]];
+  function inCat(v, c) {
+    if (c === "all") return true;
+    if (c === "unpaid") return openBills(v).length > 0;
+    return status(v) === c;
+  }
+  function catTabs() {
+    const active = S.visits.filter((v) => !v.exitAt);
+    return CATS.map(([k, t]) => `<button class="cat cat-${k} ${ui.cat === k ? "on" : ""}" data-c="${k}">${t}<span>${active.filter((v) => inCat(v, k)).length}</span></button>`).join("");
+  }
+
   /* Компактная строка списка — помещается 20–30 детей на одном экране моноблока */
   function row(v) {
     const st = status(v), paid = openBills(v).length === 0;
     return `<div class="lrow ${st}" data-v="${v.id}">
       <span class="dot"></span>
-      <div class="nm"><b>${esc(v.child)}</b><small>${v.bracelet ? "№" + esc(v.bracelet) + " · " : ""}${hm(v.start)}–${hm(v.end)} · ${esc(v.tariffName)}${v.ext.length ? " · +" + v.ext.length : ""}</small></div>
+      <div class="nm"><b>${esc(v.child)}</b><small><span class="cl">${CATS.find((c) => c[0] === st)[1]}</span> · ${hm(v.start)}–${hm(v.end)} · ${esc(v.tariffName)}${v.ext.length ? " · +" + v.ext.length : ""}</small></div>
       <div class="tm" data-t="${v.id}">${st === "bad" ? "+" : ""}${clock(v.end - Date.now())}</div>
       <span class="pd ${paid ? "paid" : "open"}" title="${paid ? "Оплачен" : "Не оплачен"}">${paid ? "✓" : "!"}</span>
       <div class="ra">
@@ -594,9 +604,9 @@
   function floorCards() {
     const q = ui.search.toLowerCase();
     const order = { bad: 0, warn: 1, ok: 2 };
-    const list = S.visits.filter((v) => !v.exitAt && (!q || v.child.toLowerCase().includes(q) || v.bracelet === q))
+    const list = S.visits.filter((v) => !v.exitAt && inCat(v, ui.cat) && (!q || v.child.toLowerCase().includes(q)))
       .sort((a, b) => order[status(a)] - order[status(b)] || a.end - b.end);
-    return list.length ? list.map(ui.layout === "list" ? row : card).join("") : `<div class="empty" style="grid-column:1/-1">Сейчас на площадке никого нет. Нажмите «Новое посещение».</div>`;
+    return list.length ? list.map(ui.layout === "list" ? row : card).join("") : `<div class="empty" style="grid-column:1/-1">${ui.cat === "all" ? "Сейчас на площадке никого нет. Нажмите «Новое посещение»." : "В этой категории сейчас никого нет."}</div>`;
   }
 
   function viewFloor() {
@@ -614,8 +624,9 @@
         <div class="stat"><small>Не оплачено</small><b>${money(unpaid)}</b></div>
         <div class="stat"><small>Получено сегодня</small><b>${can("reports") ? money(paidToday) : "—"}</b></div>
       </div>
-      <div class="bar"><input class="input" id="q" placeholder="Поиск по имени или номеру браслета" value="${esc(ui.search)}">
+      <div class="bar"><input class="input" id="q" placeholder="Поиск по имени" value="${esc(ui.search)}">
         <div class="seg" id="lay"><button data-l="list" class="${ui.layout === "list" ? "on" : ""}">☰ Список</button><button data-l="cards" class="${ui.layout === "cards" ? "on" : ""}">▦ Плитки</button></div></div>
+      <div class="cats" id="cats">${catTabs()}</div>
       <div class="${ui.layout === "list" ? "vlist" : "cards"}" id="grid">${floorCards()}</div>`);
   }
 
@@ -631,6 +642,10 @@
       ui.layout = b.dataset.l; try { localStorage.setItem(LAYOUT, ui.layout); } catch (e) {}
       render();
     };
+    $("#cats").onclick = (e) => {
+      const b = e.target.closest("[data-c]"); if (!b) return;
+      ui.cat = b.dataset.c; $("#cats").innerHTML = catTabs(); $("#grid").innerHTML = floorCards();
+    };
     $("#q").oninput = (e) => { ui.search = e.target.value; $("#grid").innerHTML = floorCards(); };
     $("#grid").onclick = (e) => {
       const b = e.target.closest("[data-a]"); if (!b) return;
@@ -642,7 +657,7 @@
   function viewVisits() {
     const rows = [...S.visits].sort((a, b) => b.start - a.start).map((v) => {
       const st = status(v), sum = visitBills(v).reduce((a, b) => a + billTotal(b), 0), paid = openBills(v).length === 0;
-      return `<tr><td>№${v.no}</td><td><b>${esc(v.child)}</b>${v.bracelet ? `<br><small>браслет ${esc(v.bracelet)}</small>` : ""}</td><td>${dt(v.start)}</td><td>${hm(v.end)}</td><td>${v.exitAt ? hm(v.exitAt) : "—"}</td>
+      return `<tr><td>№${v.no}</td><td><b>${esc(v.child)}</b></td><td>${dt(v.start)}</td><td>${hm(v.end)}</td><td>${v.exitAt ? hm(v.exitAt) : "—"}</td>
         <td>${st === "done" ? `<span class="tag grey">завершено</span>` : st === "bad" ? `<span class="tag red">просрочено</span>` : `<span class="tag green">на площадке</span>`}</td>
         <td class="num">${money(sum)}</td><td>${paid ? `<span class="tag green">оплачен</span>` : `<span class="tag red">открыт</span>`}</td>
         <td>${can("print") ? `<button class="btn sm ghost" data-p="${v.id}">Талон</button>` : ""}</td></tr>`;
@@ -863,7 +878,7 @@
     if (persist) try { localStorage.setItem(PALETTE, p); } catch (e) {}
   }
 
-  const floorSig = () => S.visits.filter((v) => !v.exitAt).map((v) => v.id + status(v)).join("|");
+  const floorSig = () => S.visits.filter((v) => !v.exitAt).map((v) => v.id + status(v) + openBills(v).length).join("|");
 
   /* Таймер: каждую секунду пересчитываем остаток от сохранённого времени окончания */
   function tick() {
@@ -877,11 +892,11 @@
       if (st === "bad" && !ui.notified[v.id + "e"]) {
         ui.notified[v.id + "e"] = 1; ui.notified[v.id + "w"] = 1;
         beep();
-        toast(`⏰ ${esc(v.child)}: время вышло${v.bracelet ? " (браслет " + esc(v.bracelet) + ")" : ""}`, "bad", can("extend") ? "Продлить" : null, () => extendDialog(v));
+        toast(`⏰ ${esc(v.child)}: время вышло`, "bad", can("extend") ? "Продлить" : null, () => extendDialog(v));
       }
     });
     if (ui.route !== "floor" || !$("#grid")) return;
-    if (floorSig() !== ui.sig) { ui.sig = floorSig(); $("#grid").innerHTML = floorCards(); return; }
+    if (floorSig() !== ui.sig) { ui.sig = floorSig(); $("#cats").innerHTML = catTabs(); $("#grid").innerHTML = floorCards(); return; }
     document.querySelectorAll("[data-t]").forEach((el) => {
       const v = S.visits.find((x) => x.id === el.dataset.t);
       if (v) el.textContent = (status(v) === "bad" ? "+" : "") + clock(v.end - Date.now());

@@ -179,3 +179,19 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
 }
 @media (min-width: 901px) { .stat { padding: 8px 14px; } .stat b { font-size: 22px; } .stats { margin-bottom: 12px; } }
 @media (min-width: 1280px) and (max-width: 1499px) { .lrow .ra .btn.sm { padding: 7px 8px; font-size: 12px; } .lrow .tm { font-size: 18px; } .lrow { grid-template-columns: 8px minmax(90px, 1fr) 80px 26px auto; gap: 6px; } }
+
+/* Категории площадки */
+.cats { display: flex; gap: 8px; flex-wrap: wrap; margin: -4px 0 12px; }
+.cat { border: 2px solid var(--line); background: var(--surface); color: var(--ink); border-radius: 99px; padding: 7px 8px 7px 14px; font-weight: 800; display: inline-flex; align-items: center; gap: 8px; }
+.cat span { min-width: 26px; padding: 2px 8px; border-radius: 99px; background: var(--soft); font-size: 13px; text-align: center; }
+.cat-bad span { background: var(--danger); color: #fff; }
+.cat-warn span { background: #f5b301; color: #3b2a00; }
+.cat-ok span { background: var(--ok); color: #fff; }
+.cat-unpaid span { background: var(--ink); color: #fff; }
+.cat.on { border-color: var(--ink); background: var(--ink); color: #fff; }
+.cat.on.cat-bad { border-color: var(--danger); background: var(--danger-bg); color: #8d1422; }
+.cat.on.cat-warn { border-color: #f5b301; background: var(--warn-bg); color: #6b4a00; }
+.cat.on.cat-ok { border-color: var(--ok); background: var(--ok-bg); color: #0f5d2c; }
+.lrow .nm .cl { font-weight: 900; }
+.lrow.ok .cl { color: var(--ok); } .lrow.warn .cl { color: #a06d00; } .lrow.bad .cl { color: var(--danger); }
+.cat-all.on span { background: #fff; color: var(--ink); }
