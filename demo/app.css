@@ -228,3 +228,7 @@ tfoot td { border-top: 2px solid var(--line); border-bottom: 0; }
 :root[data-palette="night"] .side a.nav.on { background: var(--brand); }
 :root[data-palette="night"] .side .who { background: rgba(255,255,255,.08); }
 :root[data-palette="night"] .logo-mark { box-shadow: 4px 4px 0 var(--accent); }
+
+/* Нет связи с сервером */
+.offline { position: fixed; left: 0; right: 0; top: 0; z-index: 70; background: var(--danger); color: #fff; text-align: center; padding: 10px 16px; font-weight: 800; }
+.offline[hidden] { display: none; }

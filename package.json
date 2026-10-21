@@ -1,0 +1,14 @@
+{
+  "name": "playpos",
+  "private": true,
+  "type": "module",
+  "engines": { "node": ">=20" },
+  "scripts": {
+    "dev": "node dev-server.mjs",
+    "test": "node --test tests/api.test.js"
+  },
+  "dependencies": {
+    "bcryptjs": "3.0.3",
+    "postgres": "3.4.9"
+  }
+}
