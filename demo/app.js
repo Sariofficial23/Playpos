@@ -1063,7 +1063,7 @@
     });
     if (ui.route !== "floor" || !$("#grid")) return;
     if (floorSig() !== ui.sig) { ui.sig = floorSig(); $("#cats").innerHTML = catTabs(); $("#grid").innerHTML = floorCards(); return; }
-    document.querySelectorAll("[data-t]").forEach((el) => {
+    document.querySelectorAll("#grid [data-t]").forEach((el) => {
       const v = S.visits.find((x) => x.id === el.dataset.t);
       if (v) el.textContent = (status(v) === "bad" ? "+" : "") + clock(v.end - Date.now());
     });

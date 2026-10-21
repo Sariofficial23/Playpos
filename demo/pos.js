@@ -1270,11 +1270,11 @@
     });
     if (ui.route !== "floor" || !$("#grid")) return;
     if (floorSig() !== ui.sig) { ui.sig = floorSig(); $("#cats").innerHTML = catTabs(); $("#grid").innerHTML = floorCards(); return; }
-    document.querySelectorAll("[data-t]").forEach((el) => {
+    $("#grid").querySelectorAll("[data-t]").forEach((el) => {
       const v = S.visits.find((x) => x.id === el.dataset.t);
       if (v) el.textContent = timerText(v);
     });
-    document.querySelectorAll("[data-s]").forEach((el) => {
+    $("#grid").querySelectorAll("[data-s]").forEach((el) => {
       const v = S.visits.find((x) => x.id === el.dataset.s);
       if (v && isOpenRate(v)) el.textContent = money(openDue(v));
     });
