@@ -112,6 +112,10 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
 .pick.on { border-color: var(--brand); background: var(--soft); }
 .pay2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 .pay2 .pick { text-align: center; padding: 18px 10px; font-size: 18px; font-weight: 900; }
+.pay3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; }
+.pay3 .pick.pay span { font-size: 15px; text-align: center; }
+.pick.pay .mix { display: flex; gap: 2px; } .pick.pay .mix svg { width: 30px; height: 30px; }
+.row.disc { gap: 6px; flex-wrap: wrap; } .row.disc .input { max-width: 150px; }
 .total { background: var(--ink); color: #fff; border-radius: 16px; padding: 14px 16px; display: flex; justify-content: space-between; align-items: center; margin-top: 14px; }
 .total b { font-size: 26px; }
 .summary { background: var(--bg); border-radius: 14px; padding: 12px 14px; margin-top: 12px; line-height: 1.6; }
@@ -156,7 +160,7 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
 
 /* Список посещений — компактный режим для моноблока */
 .vlist { display: grid; grid-template-columns: 1fr; gap: 6px; }
-@media (min-width: 1280px) { .vlist { grid-template-columns: 1fr 1fr; column-gap: 12px; } }
+/* Одна колонка: новые дети сверху, старые ниже — порядок читается сверху вниз */
 .lrow { display: grid; grid-template-columns: 8px minmax(120px, 1fr) 92px 28px auto; align-items: center; gap: 10px;
   background: var(--surface); border: 2px solid var(--line); border-radius: 12px; padding: 5px 8px 5px 0; min-height: 48px; overflow: hidden; }
 .lrow .dot { align-self: stretch; border-radius: 0 6px 6px 0; margin: -5px 0; }

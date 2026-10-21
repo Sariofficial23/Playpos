@@ -99,6 +99,29 @@ test("PlayPos API", { skip }, async (t) => {
     await call(handler, owner, { op: "settings.save", venue: "A", warn: 5, overRate: "" });
   });
 
+  await t.test("скидка только с правом; оплата частями; изменение оплаты; касса смены сходится", async () => {
+    const cashier = (await call(handler, null, { op: "login", login: "cash", password: "1234" })).cookie;
+    await call(handler, cashier, { op: "shift.open", openingCash: 0 });
+    const v = (await call(handler, cashier, { op: "visit.create", child: "Лола", tariffId: tariff30.id })).data;
+    // кассир без права «Скидки» скидку дать не может
+    assert.equal((await call(handler, cashier, { op: "bills.pay", billIds: [v.billId], method: "cash", discount: 5000 })).status, 403);
+    // частями: 10 000 наличными, остальное картой
+    assert.equal((await call(handler, cashier, { op: "bills.pay", billIds: [v.billId], method: "mixed", cash: 10000 })).status, 200);
+    let b = (await call(handler, owner, { op: "state" })).data.bills.find((x) => x.id === v.billId);
+    assert.deepEqual([b.method, b.cash, b.card, b.discount], ["mixed", 10000, tariff30.price - 10000, 0]);
+    // кассир без права исправить оплату не может, владелец — может (скидка 5 000, всё наличными)
+    assert.equal((await call(handler, cashier, { op: "bill.repay", billId: v.billId, method: "cash" })).status, 403);
+    assert.equal((await call(handler, owner, { op: "bill.repay", billId: v.billId, method: "cash", discount: 5000 })).status, 200);
+    b = (await call(handler, owner, { op: "state" })).data.bills.find((x) => x.id === v.billId);
+    assert.deepEqual([b.method, b.cash, b.card, b.discount], ["cash", tariff30.price - 5000, 0, 5000]);
+    assert.equal((await call(handler, owner, { op: "bill.repay", billId: v.billId, method: "cash", discount: tariff30.price + 1 })).status, 400);
+    // в кассе смены — ровно принятые наличные
+    const close = await call(handler, cashier, { op: "shift.close", countedCash: tariff30.price - 5000 });
+    assert.equal(close.data.diff, 0);
+    // смена закрыта — изменить оплату уже нельзя
+    assert.equal((await call(handler, owner, { op: "bill.repay", billId: v.billId, method: "card" })).status, 409);
+  });
+
   await t.test("площадки изолированы: чужие данные не видны и не меняются", async () => {
     const [tb] = await sql`insert into tenants (name) values ('B') returning id`;
     const { default: bcrypt } = await import("bcryptjs");

@@ -18,6 +18,7 @@
     ["Касса", "finish", "Завершение посещения", "Отметить выход ребёнка"],
     ["Касса", "print", "Печать талона", "Талон 58/80 мм"],
     ["Касса", "shift", "Своя смена", "Открытие и закрытие кассовой смены"],
+    ["Касса", "discount", "Скидки и изменение оплаты", "Скидка при оплате; исправить способ оплаты уже оплаченного счёта"],
     ["Управление", "reports", "Отчёты", "Выручка, посещения, итоги смен"],
     ["Управление", "expenses", "Расходы", "Добавление расходов"],
     ["Управление", "refunds", "Возвраты", "Возврат денег по оплаченному счёту"],
@@ -27,7 +28,7 @@
   ];
   const ROLES = {
     owner: { name: "Владелец", perms: PERMS.map((p) => p[1]) },
-    admin: { name: "Администратор", perms: ["sell", "extend", "pay", "finish", "print", "shift", "reports", "expenses", "refunds", "tariffs"] },
+    admin: { name: "Администратор", perms: ["sell", "extend", "pay", "finish", "print", "shift", "reports", "expenses", "refunds", "tariffs", "discount"] },
     cashier: { name: "Кассир", perms: ["sell", "extend", "pay", "finish", "print", "shift"] },
   };
   const permsOf = (role) => Object.fromEntries(PERMS.map((p) => [p[1], ROLES[role].perms.includes(p[1])]));
@@ -118,7 +119,7 @@
   const me = () => S.staff.find((u) => u.id === S.currentUserId);
   const can = (p) => { const u = me(); return !!u && u.active && (u.role === "owner" || !!u.perms[p]); };
   const staffName = (sid) => (S.staff.find((u) => u.id === sid) || {}).name || "—";
-  const billTotal = (b) => b.items.reduce((a, i) => a + i.amount, 0);
+  const billTotal = (b) => b.items.reduce((a, i) => a + i.amount, 0) - (b.discount || 0); // к оплате, со скидкой
   const refunded = (b) => S.refunds.filter((r) => r.billId === b.id).reduce((a, r) => a + r.amount, 0);
   const visitBills = (v) => S.bills.filter((b) => b.visitId === v.id && b.status !== "cancelled");
   const openBills = (v) => visitBills(v).filter((b) => b.status === "open");
@@ -293,25 +294,65 @@
 
   const ICON_CASH = `<svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="7" width="16" height="11" rx="2"/><path d="M6 7V5.5A1.5 1.5 0 0 1 7.5 4H20a2 2 0 0 1 2 2v9a1.5 1.5 0 0 1-1.5 1.5H18"/><circle cx="10" cy="12.5" r="2.2"/></svg>`;
   const ICON_CARD = `<svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><rect x="2" y="5" width="20" height="14" rx="2.5"/><path d="M2 10h20"/></svg>`;
-  const methodName = (m) => (m === "cash" ? "Наличные" : "Карта");
+  const methodName = (m) => ({ cash: "Наличные", card: "Карта", mixed: "Наличные + карта" })[m] || "—";
+  // Как оплачен счёт: «Наличные» или «Наличные 10 000 + карта 10 000»
+  const paidHow = (b) => (b.method === "mixed" ? `${PPI18N.tr("Наличные")} ${money(b.cash)} + ${PPI18N.tr("карта")} ${money(b.card)}` : methodName(b.method));
   const payButtons = () => `<label class="f">Способ оплаты</label>
-    <div class="pay2" id="pm"><button class="pick pay on" data-m="cash">${ICON_CASH}<span>Наличные</span></button><button class="pick pay" data-m="card">${ICON_CARD}<span>Карта</span></button></div>
+    <div class="pay3" id="pm"><button class="pick pay on" data-m="cash">${ICON_CASH}<span>Наличные</span></button><button class="pick pay" data-m="card">${ICON_CARD}<span>Карта</span></button><button class="pick pay" data-m="mixed"><span class="mix">${ICON_CASH}${ICON_CARD}</span><span>Наличные + карта</span></button></div>
+    <div class="grid2" id="pmSplit" hidden><div><label class="f">Наличными</label><input class="input" id="pmCash" type="number" min="0" step="1000"></div><div><label class="f">Картой</label><input class="input" id="pmCard" type="number" min="0" step="1000"></div></div>
+    ${can("discount") ? `<label class="f">Скидка, сум</label><div class="row disc"><input class="input" id="pmDisc" type="number" min="0" step="1000" placeholder="0">
+      <button class="btn sm ghost" type="button" data-pc="10">10%</button><button class="btn sm ghost" type="button" data-pc="20">20%</button><button class="btn sm ghost" type="button" data-pc="50">50%</button><button class="btn sm ghost" type="button" data-pc="0">Без скидки</button></div>` : ""}
+    <div class="summary" id="pmNet" hidden></div>
     <p class="note">Только учёт способа оплаты — терминалы и эквайринг не подключаются.</p>`;
-  function mountPay(m, set) {
+  // Блок оплаты: способ (наличные / карта / частями) и скидка (только с правом «Скидки»).
+  // getTotal — сумма к оплате без скидки (может расти: просрочка, поминутный тариф); totEl показывает итог со скидкой.
+  function mountPay(m, getTotal, totEl, init) {
+    const st = { method: "cash", discount: 0, cash: null, ...init };
+    m.querySelectorAll("#pm .pick").forEach((x) => x.classList.toggle("on", x.dataset.m === st.method));
+    if (st.discount && $("#pmDisc", m)) $("#pmDisc", m).value = st.discount;
+    const net = () => Math.max(0, getTotal() - st.discount);
+    const draw = () => {
+      if (st.discount > getTotal()) st.discount = getTotal();
+      const n = net(), split = $("#pmSplit", m);
+      split.hidden = st.method !== "mixed";
+      if (st.method === "mixed") {
+        if (st.cash == null) st.cash = Math.round(n / 2 / 1000) * 1000;
+        st.cash = Math.min(Math.max(0, st.cash), n);
+        if (document.activeElement !== $("#pmCash", m)) $("#pmCash", m).value = st.cash;
+        if (document.activeElement !== $("#pmCard", m)) $("#pmCard", m).value = n - st.cash;
+      }
+      const box = $("#pmNet", m);
+      box.hidden = !st.discount;
+      box.innerHTML = `${PPI18N.tr("Скидка")}: <b>−${money(st.discount)}</b> · ${PPI18N.tr("к оплате со скидкой")}: <b>${money(n)}</b>`;
+      if (totEl) totEl.textContent = money(n);
+    };
     $("#pm", m).onclick = (e) => {
       const b = e.target.closest("[data-m]"); if (!b) return;
-      set(b.dataset.m); m.querySelectorAll("#pm .pick").forEach((x) => x.classList.toggle("on", x === b));
+      st.method = b.dataset.m; m.querySelectorAll("#pm .pick").forEach((x) => x.classList.toggle("on", x === b)); draw();
     };
+    const num = (el) => Math.max(0, Math.round(+el.value || 0));
+    $("#pmCash", m).oninput = (e) => { st.cash = Math.min(num(e.target), net()); $("#pmCard", m).value = net() - st.cash; };
+    $("#pmCard", m).oninput = (e) => { st.cash = net() - Math.min(num(e.target), net()); $("#pmCash", m).value = st.cash; };
+    const disc = $("#pmDisc", m);
+    if (disc) {
+      disc.oninput = () => { st.discount = Math.min(num(disc), getTotal()); draw(); };
+      m.querySelectorAll("[data-pc]").forEach((b) => (b.onclick = () => {
+        st.discount = Math.round((getTotal() * +b.dataset.pc) / 100 / 100) * 100;
+        disc.value = st.discount || ""; draw();
+      }));
+    }
+    draw();
+    return { refresh: draw, net, data: () => ({ method: st.method, discount: st.discount, ...(st.method === "mixed" ? { cash: st.cash } : {}) }) };
   }
   const billLines = (b) => b.items.map((i) => `<div class="ln"><span>${esc(i.title)}</span><span>${money(i.amount)}</span></div>`).join("") +
-    (b.status === "paid" ? `<div class="paidline">✓ Оплачено: <b>${methodName(b.method)}</b> · ${dt(b.paidAt)} · кассир ${esc(staffName(b.paidBy))}</div>` : "");
+    (b.discount ? `<div class="ln"><span>${PPI18N.tr("Скидка")}</span><span>−${money(b.discount)}</span></div>` : "") +
+    (b.status === "paid" ? `<div class="paidline">✓ Оплачено: <b>${esc(paidHow(b))}</b> · ${dt(b.paidAt)} · кассир ${esc(staffName(b.paidBy))}</div>` : "");
 
   function payDialog(bills, after) {
     if (!can("pay")) return toast("Нет права принимать оплату", "bad");
     bills = bills.filter((b) => b.status === "open");
     if (!bills.length) { if (after) after(); return; }
     if (!requireShift()) return;
-    let method = "cash"; // при каждом открытии по умолчанию «Наличные»
     const total = bills.reduce((a, b) => a + billTotal(b), 0);
     const v = S.visits.find((x) => x.id === bills[0].visitId);
     modal(`<div class="dlg">
@@ -319,18 +360,20 @@
       <h2>Закрыть счёт</h2>
       <div class="sub">${esc(v ? v.child : "")} · счёт ${bills.map((b) => "№" + b.no).join(", ")}</div>
       <div class="lines">${bills.map(billLines).join("")}</div>
-      <div class="tot"><span>Итого</span><b>${money(total)}</b></div>
+      <div class="tot"><span>Итого</span><b id="pTot">${money(total)}</b></div>
       ${payButtons()}
       <button class="btn big" id="pOk">Подтвердить оплату</button>
     </div>`, (m) => {
-      mountPay(m, (x) => (method = x));
+      const pay = mountPay(m, () => total, $("#pTot", m)); // при каждом открытии по умолчанию «Наличные»
       $("[data-x]", m).onclick = close;
       $("#pOk", m).onclick = async (e) => {
         busy(e.target, true); // защита от двойного клика; сервер тоже не даст оплатить дважды
-        const out = await act("bills.pay", { billIds: bills.map((b) => b.id), method });
+        const d = pay.data();
+        const out = await act("bills.pay", { billIds: bills.map((b) => b.id), ...d });
         if (!out) return busy(e.target, false);
-        if (S.settings.autoReceipt !== false) printReceipt(S.bills.filter((b) => out.paid.includes(b.id)));
-        close(); toast(`Оплачено ${money(total)} — ${methodName(method).toLowerCase()}`);
+        const paid = S.bills.filter((b) => out.paid.includes(b.id));
+        if (S.settings.autoReceipt !== false) printReceipt(paid);
+        close(); toast(`Оплачено ${money(paid.reduce((a, b) => a + billTotal(b), 0))} — ${methodName(d.method).toLowerCase()}`);
         if (after) after();
       };
     }, { side: true });
@@ -344,7 +387,6 @@
     if (isOpenRate(v)) return openRatePanel(v);
     if (open.length && !can("pay")) return toast("Есть неоплаченный счёт — нужен сотрудник с правом оплаты", "bad");
     if (open.length && !requireShift()) return;
-    let method = "cash";
     const t = now(), over = Math.max(0, t - v.end), rate = overRate();
     const billsDue = open.reduce((a, b) => a + billTotal(b), 0);
     const due = billsDue + overDue(v);
@@ -363,27 +405,28 @@
         <button class="btn big" id="coOk" style="flex:1">${due ? (exit ? "Подтвердить оплату и выход" : "Подтвердить оплату") : "Отметить выход"}</button>
       </div>
     </div>`, (m) => {
-      if (due) mountPay(m, (x) => (method = x));
+      const pay = due ? mountPay(m, () => billsDue + overDue(v), $("#coTot", m)) : null;
       // Сумма просрочки растёт, пока панель открыта; окончательно её считает сервер при подтверждении
       const draw = () => {
         if (!m.isConnected || !$("#ovT", m)) return clearInterval(iv);
         $("#ovT", m).textContent = `${PPI18N.tr("Просрочка")}: ${overMins(v)} ${PPI18N.tr("мин")} × ${money(rate)}`;
         $("#ovA", m).textContent = money(overDue(v));
-        $("#coTot", m).textContent = money(billsDue + overDue(v));
+        if (pay) pay.refresh();
       };
       const iv = setInterval(draw, 1000); draw();
       $("[data-x]", m).onclick = () => { clearInterval(iv); close(); };
       const ext = $("#coExt", m); if (ext) ext.onclick = () => { close(); extendDialog(v); };
       $("#coOk", m).onclick = async (e) => {
         busy(e.target, true);
-        const out = await act("visit.checkout", { visitId: v.id, exit, method });
+        const d = pay ? pay.data() : { method: "cash" };
+        const out = await act("visit.checkout", { visitId: v.id, exit, ...d });
         if (!out) return busy(e.target, false);
         clearInterval(iv);
         const paid = S.bills.filter((b) => out.paid.includes(b.id));
         if (paid.length && S.settings.autoReceipt !== false) printReceipt(paid);
         close();
         const sum = paid.reduce((a, b) => a + billTotal(b), 0);
-        toast(`${esc(v.child)}: ${sum ? `оплачено ${money(sum)} (${methodName(method).toLowerCase()})` : "оплачено ранее"}${exit ? ", выход отмечен" : ""}`);
+        toast(`${esc(v.child)}: ${paid.length ? `оплачено ${money(sum)} (${methodName(d.method).toLowerCase()})` : "оплачено ранее"}${exit ? ", выход отмечен" : ""}`);
       };
     }, { side: true });
   }
@@ -392,7 +435,6 @@
   function openRatePanel(v) {
     if (!can("pay")) return toast("Поминутный тариф оплачивается при выходе — нужен сотрудник с правом оплаты", "bad");
     if (!requireShift()) return;
-    let method = "cash";
     modal(`<div class="dlg">
       <button class="xbtn" data-x aria-label="Закрыть">×</button>
       <h2>Выход ребёнка</h2>
@@ -406,20 +448,21 @@
         if (!m.isConnected) return clearInterval(iv);
         $("#orL", m).innerHTML = `<div class="ln"><span>На площадке</span><span>${clock(now() - v.start)}</span></div>
           <div class="ln"><span>${openMins(v)} мин × ${money(v.rate)}</span><span>${money(openDue(v))}</span></div>`;
-        $("#orT", m).textContent = money(openDue(v));
+        if (pay) pay.refresh();
       };
+      const pay = mountPay(m, () => openDue(v), $("#orT", m));
       const iv = setInterval(draw, 1000); draw();
-      mountPay(m, (x) => (method = x));
       $("[data-x]", m).onclick = () => { clearInterval(iv); close(); };
       $("#coOk", m).onclick = async (e) => {
         busy(e.target, true);
-        const out = await act("visit.checkout", { visitId: v.id, exit: true, method });
+        const d = pay.data();
+        const out = await act("visit.checkout", { visitId: v.id, exit: true, ...d });
         if (!out) return busy(e.target, false);
         clearInterval(iv);
         const paid = S.bills.filter((b) => out.paid.includes(b.id));
         if (paid.length && S.settings.autoReceipt !== false) printReceipt(paid);
         close();
-        toast(`${esc(v.child)}: оплачено ${money(paid.reduce((a, b) => a + billTotal(b), 0))} (${methodName(method).toLowerCase()}), выход отмечен`);
+        toast(`${esc(v.child)}: оплачено ${money(paid.reduce((a, b) => a + billTotal(b), 0))} (${methodName(d.method).toLowerCase()}), выход отмечен`);
       };
     }, { side: true });
   }
@@ -534,14 +577,18 @@
       toast(`🖨 ${pr ? esc(pr.displayName) + ": " + esc(PPI18N.tr(pr.text)) : PPI18N.tr("Принтер не выбран")}. ${PPI18N.tr("Чек можно напечатать позже: «Счета» → «🖨 Чек».")}`, "warn");
     const v = S.visits.find((x) => x.id === bills[0].visitId) || {};
     const b0 = bills[0], total = bills.reduce((a, b) => a + billTotal(b), 0);
+    const sumOf = (k) => bills.reduce((a, b) => a + (b[k] || 0), 0), cash = sumOf("cash"), card = sumOf("card"), disc = sumOf("discount");
     sendToPrinter([
       R.title(S.settings.venue), R.center(`Чек № ${bills.map((b) => b.no).join(", ")}`),
       R.center(`${new Date(b0.paidAt).toLocaleDateString("ru-RU", { timeZone: TZ })} ${hm(b0.paidAt)}`), R.hr(),
       R.row("Ребёнок", v.child || ""), ...(v.start ? [R.row("Время", hm(v.start) + "–" + hm(v.end))] : []), R.hr(),
-      ...bills.flatMap((b) => b.items).map((i) => R.row(i.title, money(i.amount))), R.hr(),
-      R.big("ИТОГО", money(total)), R.row("Способ оплаты", methodName(b0.method)), R.row("Кассир", staffName(b0.paidBy)), R.hr(),
+      ...bills.flatMap((b) => b.items).map((i) => R.row(i.title, money(i.amount))),
+      ...(disc ? [R.row("Скидка", "−" + money(disc))] : []), R.hr(),
+      R.big("ИТОГО", money(total)),
+      ...(cash && card ? [R.row("Наличные", money(cash)), R.row("Карта", money(card))] : [R.row("Способ оплаты", methodName(card ? "card" : "cash"))]),
+      R.row("Кассир", staffName(b0.paidBy)), R.hr(),
       R.center("Не является фискальным чеком"), R.center("Спасибо за визит!"),
-    ], { drawer: S.settings.drawer && b0.method === "cash" });
+    ], { drawer: S.settings.drawer && cash > 0 });
     log("Печать чека", `№${bills.map((b) => b.no).join(", ")}, ${money(total)}`);
   }
 
@@ -554,7 +601,7 @@
       R.row("Ребёнок", v.child), R.row("Дата", new Date(v.start).toLocaleDateString("ru-RU", { timeZone: TZ })),
       R.row("Начало", hm(v.start)), ...(isOpenRate(v) ? [R.row("Тариф", `${v.tariffName}, ${money(v.rate)}/мин`), R.row("Оплата", "при выходе")] : [R.row("Окончание", hm(v.end)), R.row("Тариф", v.tariffName)]), R.hr(),
       ...bills.flatMap((b) => [R.text(`Счёт №${b.no}`), ...b.items.map((i) => R.row(i.title, money(i.amount))), R.row("Итого", money(billTotal(b))),
-        ...(b.status === "paid" ? [R.row("Оплачено", methodName(b.method) + " " + dt(b.paidAt)), R.row("Кассир", staffName(b.paidBy))] : [R.row("Статус", "НЕ ОПЛАЧЕН")]), R.hr()]),
+        ...(b.status === "paid" ? [R.row("Оплачено", paidHow(b) + " " + dt(b.paidAt)), R.row("Кассир", staffName(b.paidBy))] : [R.row("Статус", "НЕ ОПЛАЧЕН")]), R.hr()]),
       R.center(unpaid ? "Счёт ещё открыт" : "Счёт оплачен"), R.center("Не является фискальным чеком"),
     ]);
     log("Печать талона", `${v.child}, №${v.no}`);
@@ -574,8 +621,8 @@
   }
 
   function shiftCash(sh) {
-    const cashIn = S.bills.filter((b) => b.shiftId === sh.id && b.status === "paid" && b.method === "cash").reduce((a, b) => a + billTotal(b), 0);
-    const card = S.bills.filter((b) => b.shiftId === sh.id && b.status === "paid" && b.method === "card").reduce((a, b) => a + billTotal(b), 0);
+    const inShift = S.bills.filter((b) => b.shiftId === sh.id && b.status === "paid");
+    const cashIn = inShift.reduce((a, b) => a + (b.cash || 0), 0), card = inShift.reduce((a, b) => a + (b.card || 0), 0);
     const ref = S.refunds.filter((r) => r.shiftId === sh.id && r.method === "cash").reduce((a, r) => a + r.amount, 0);
     const exp = S.expenses.filter((e) => e.shiftId === sh.id && e.source === "cash").reduce((a, e) => a + e.amount, 0);
     return { cashIn, card, ref, exp, expected: sh.openingCash + cashIn - ref - exp };
@@ -682,12 +729,36 @@
     });
   }
 
+  // Исправить оплату: способ, части, скидка — пока смена этого счёта не закрыта и не было возврата
+  const canRepay = (b) => can("discount") && b.status === "paid" && !refunded(b) && (S.shifts.find((s) => s.id === b.shiftId) || {}).closedAt == null;
+  function repayDialog(b) {
+    if (!canRepay(b)) return toast("Изменить оплату нельзя: смена закрыта или был возврат", "warn");
+    const gross = b.items.reduce((a, i) => a + i.amount, 0);
+    const v = S.visits.find((x) => x.id === b.visitId) || {};
+    modal(`<div class="dlg">
+      <button class="xbtn" data-x aria-label="Закрыть">×</button>
+      <h2>Изменить оплату — счёт №${b.no}</h2>
+      <div class="sub">${esc(v.child || "")} · сейчас: ${esc(paidHow(b))}${b.discount ? ` · скидка ${money(b.discount)}` : ""}</div>
+      <div class="lines">${b.items.map((i) => `<div class="ln"><span>${esc(i.title)}</span><span>${money(i.amount)}</span></div>`).join("")}</div>
+      <div class="tot"><span>К оплате</span><b id="rpTot">${money(gross)}</b></div>
+      ${payButtons()}
+      <button class="btn big" id="rpOk">Сохранить</button>
+    </div>`, (m) => {
+      const pay = mountPay(m, () => gross, $("#rpTot", m), { method: b.method, discount: b.discount || 0, cash: b.method === "mixed" ? b.cash : null });
+      $("[data-x]", m).onclick = close;
+      $("#rpOk", m).onclick = async (e) => {
+        busy(e.target, true);
+        if (await act("bill.repay", { billId: b.id, ...pay.data() }, "Оплата изменена")) close(); else busy(e.target, false);
+      };
+    }, { side: true });
+  }
+
   function refundDialog(b) {
     const max = billTotal(b) - refunded(b);
     if (max <= 0) return toast("По этому счёту уже всё возвращено", "warn");
     if (!requireShift()) return;
     modal(`<div class="dlg"><h2>Возврат по счёту №${b.no}</h2>
-      <div class="summary">Оплачено: <b>${money(billTotal(b))}</b> (${b.method === "cash" ? "наличные" : "карта"}) · можно вернуть: <b>${money(max)}</b></div>
+      <div class="summary">Оплачено: <b>${money(billTotal(b))}</b> (${esc(paidHow(b).toLowerCase())}) · можно вернуть: <b>${money(max)}</b></div>
       <label class="f">Сумма возврата</label><input class="input" id="rAmt" type="number" min="1" max="${max}" value="${max}" autofocus>
       <label class="f">Причина (обязательно)</label><input class="input" id="rWhy" maxlength="120">
       <div class="foot"><button class="btn ghost" data-x>Отмена</button><button class="btn danger" id="rOk">Оформить возврат</button></div></div>`, (m) => {
@@ -792,9 +863,9 @@
 
   function floorCards() {
     const q = ui.search.toLowerCase();
-    const order = { bad: 0, warn: 1, ok: 2, vip: 3 };
+    // Новые дети сверху, пришедшие раньше — ниже (цвет строки и так показывает, у кого время вышло)
     const list = S.visits.filter((v) => !v.exitAt && inCat(v, ui.cat) && (!q || v.child.toLowerCase().includes(q)))
-      .sort((a, b) => order[status(a)] - order[status(b)] || a.end - b.end);
+      .sort((a, b) => b.start - a.start || Number(b.no) - Number(a.no));
     return list.length ? list.map(ui.layout === "list" ? row : card).join("") : `<div class="empty" style="grid-column:1/-1">${ui.cat === "all" ? "Сейчас на площадке никого нет. Нажмите «Новое посещение»." : "В этой категории сейчас никого нет."}</div>`;
   }
 
@@ -878,7 +949,7 @@
       const vip = isOpenRate(v);
       return `<tr><td>№${v.no}</td><td><b>${esc(v.child)}</b></td><td>${dt(v.start)}</td><td>${vip ? "поминутно" : hm(v.end)}</td><td>${v.exitAt ? hm(v.exitAt) : "—"}</td>
         <td>${st === "done" ? `<span class="tag grey">завершено</span>` : st === "bad" ? `<span class="tag red">просрочено</span>` : `<span class="tag green">на площадке</span>`}</td>
-        <td class="num">${money(vip ? openDue(v) : sum)}</td><td>${vip ? `<span class="tag grey">при выходе</span>` : paid ? `<span class="tag green">оплачен</span><br><small>${[...new Set(visitBills(v).map((b) => methodName(b.method)))].join(" + ")}</small>` : `<span class="tag red">открыт</span>`}</td>
+        <td class="num">${money(vip ? openDue(v) : sum)}</td><td>${vip ? `<span class="tag grey">при выходе</span>` : paid ? `<span class="tag green">оплачен</span><br><small>${[...new Set(visitBills(v).map((b) => methodName(b.method)))].join(", ")}</small>` : `<span class="tag red">открыт</span>`}</td>
         <td>${can("print") ? `<button class="btn sm ghost" data-p="${v.id}">Талон</button>` : ""}</td></tr>`;
     }).join("");
     return shell("Посещения", "", `<div class="panel tbl"><table><thead><tr><th>№</th><th>Ребёнок</th><th>Начало</th><th>План. конец</th><th>Выход</th><th>Статус</th><th class="num">Сумма</th><th>Оплата</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>`);
@@ -894,8 +965,8 @@
       const v = S.visits.find((x) => x.id === b.visitId) || {};
       const r = refunded(b);
       return `<tr><td>№${b.no}</td><td>${esc(v.child)}</td><td>${b.items.map((i) => esc(i.title)).join("<br>")}</td><td class="num"><b>${money(billTotal(b))}</b>${r ? `<br><small style="color:var(--danger)">возврат −${money(r)}</small>` : ""}</td>
-        <td>${b.status === "paid" ? `<span class="tag green">оплачен</span><br><small>${b.method === "cash" ? "наличные" : "карта"} · ${dt(b.paidAt)} · ${esc(staffName(b.paidBy))}</small>` : `<span class="tag red">открыт</span>`}</td>
-        <td>${b.status === "open" ? `<button class="btn sm" data-pay="${b.id}">Оплатить</button>` : `${can("print") ? `<button class="btn sm ghost" data-rc="${b.id}">🖨 Чек</button> ` : ""}${can("refunds") ? `<button class="btn sm ghost" data-ref="${b.id}">Возврат</button>` : ""}`}</td></tr>`;
+        <td>${b.status === "paid" ? `<span class="tag green">оплачен</span><br><small>${esc(paidHow(b).toLowerCase())}${b.discount ? ` · ${PPI18N.tr("скидка")} ${money(b.discount)}` : ""} · ${dt(b.paidAt)} · ${esc(staffName(b.paidBy))}</small>` : `<span class="tag red">открыт</span>`}</td>
+        <td>${b.status === "open" ? `<button class="btn sm" data-pay="${b.id}">Оплатить</button>` : `${can("print") ? `<button class="btn sm ghost" data-rc="${b.id}">🖨 Чек</button> ` : ""}${canRepay(b) ? `<button class="btn sm ghost" data-rp="${b.id}">Изменить оплату</button> ` : ""}${can("refunds") ? `<button class="btn sm ghost" data-ref="${b.id}">Возврат</button>` : ""}`}</td></tr>`;
     }).join("");
     return shell("Счета", `<div class="seg" id="bf">${[["open", "Открытые"], ["paid", "Оплаченные"], ["all", "Все"]].map(([k, t]) => `<button data-f="${k}" class="${f === k ? "on" : ""}">${t}</button>`).join("")}</div>`,
       `<div class="panel tbl">${rows ? `<table><thead><tr><th>№</th><th>Ребёнок</th><th>Позиции</th><th class="num">Сумма</th><th>Статус</th><th></th></tr></thead><tbody>${rows}</tbody></table>` : `<div class="empty">Счетов нет</div>`}</div>`);
@@ -905,6 +976,7 @@
     document.querySelectorAll("[data-pay]").forEach((b) => (b.onclick = () => payDialog([S.bills.find((x) => x.id === b.dataset.pay)])));
     document.querySelectorAll("[data-rc]").forEach((b) => (b.onclick = () => printReceipt([S.bills.find((x) => x.id === b.dataset.rc)])));
     document.querySelectorAll("[data-ref]").forEach((b) => (b.onclick = () => refundDialog(S.bills.find((x) => x.id === b.dataset.ref))));
+    document.querySelectorAll("[data-rp]").forEach((b) => (b.onclick = () => repayDialog(S.bills.find((x) => x.id === b.dataset.rp))));
   }
 
   function viewShifts() {
@@ -964,7 +1036,8 @@
     const mine = (sid) => who === "all" || sid === who;
     const paid = S.bills.filter((b) => b.status === "paid" && inPeriod(b.paidAt) && mine(b.paidBy));
     const sum = (arr) => arr.reduce((a, b) => a + billTotal(b), 0);
-    const cash = sum(paid.filter((b) => b.method === "cash")), card = sum(paid.filter((b) => b.method === "card"));
+    const cash = paid.reduce((a, b) => a + (b.cash || 0), 0), card = paid.reduce((a, b) => a + (b.card || 0), 0);
+    const discSum = paid.reduce((a, b) => a + (b.discount || 0), 0);
     const refs = S.refunds.filter((r) => inPeriod(r.at) && mine(r.staffId));
     const refunds = refs.reduce((a, r) => a + r.amount, 0);
     const exp = S.expenses.filter((e) => inPeriod(e.at) && mine(e.staffId)).reduce((a, e) => a + e.amount, 0);
@@ -978,7 +1051,7 @@
     // Касса по кассирам: кто сколько принял наличными и картой
     const by = {};
     const row = (sid) => (by[sid] = by[sid] || { n: 0, cash: 0, card: 0, ref: 0 });
-    paid.forEach((b) => { const r = row(b.paidBy); r.n++; r[b.method] += billTotal(b); });
+    paid.forEach((b) => { const r = row(b.paidBy); r.n++; r.cash += b.cash || 0; r.card += b.card || 0; });
     refs.forEach((x) => (row(x.staffId).ref += x.amount));
     const cashierRows = Object.entries(by).map(([sid, r]) => `<tr><td><b>${esc(staffName(sid))}</b></td><td class="num">${r.n}</td><td class="num">${money(r.cash)}</td><td class="num">${money(r.card)}</td><td class="num">${r.ref ? "−" + money(r.ref) : "—"}</td><td class="num"><b>${money(r.cash + r.card - r.ref)}</b></td></tr>`).join("");
 
@@ -993,7 +1066,7 @@
     const payRows = [...paid].sort((a, b) => b.paidAt - a.paidAt).map((b) => {
       const v = S.visits.find((x) => x.id === b.visitId) || {};
       return `<tr><td>${dt(b.paidAt)}</td><td>${esc(v.child)}</td><td>№${b.no}<br><small>${b.items.map((i) => esc(i.title)).join(", ")}</small></td><td>${esc(staffName(b.paidBy))}</td>
-        <td><span class="tag ${b.method === "cash" ? "green" : ""}">${b.method === "cash" ? "💵 Наличные" : "💳 Карта"}</span></td><td class="num"><b>${money(billTotal(b))}</b></td></tr>`;
+        <td><span class="tag ${b.method === "cash" ? "green" : ""}">${{ cash: "💵", card: "💳", mixed: "💵💳" }[b.method] || ""} ${esc(paidHow(b))}</span>${b.discount ? `<br><small>${PPI18N.tr("скидка")} ${money(b.discount)}</small>` : ""}</td><td class="num"><b>${money(billTotal(b))}</b></td></tr>`;
     }).join("");
 
     const staffOpts = `<select class="input" id="rs" style="padding:8px 10px"><option value="all">Все кассиры</option>${S.staff.map((u) => `<option value="${u.id}" ${who === u.id ? "selected" : ""}>${esc(u.name)}</option>`).join("")}</select>`;
@@ -1003,6 +1076,7 @@
         <div class="kpi"><small>💵 Наличные</small><b>${money(cash)}</b></div>
         <div class="kpi"><small>💳 Карта</small><b>${money(card)}</b></div>
         <div class="kpi"><small>в т.ч. продления</small><b>${money(extSum)}</b></div>
+        <div class="kpi"><small>Скидки</small><b>${discSum ? "−" + money(discSum) : "—"}</b></div>
         <div class="kpi"><small>Возвраты</small><b>−${money(refunds)}</b></div>
         <div class="kpi"><small>Расходы</small><b>−${money(exp)}</b></div>
         <div class="kpi hl"><small>Результат по внесённым расходам</small><b>${money(cash + card - refunds - exp)}</b></div>

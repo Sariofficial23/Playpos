@@ -48,6 +48,14 @@
     "Обновить PlayPos сейчас? Программа закроется примерно на минуту и откроется снова. Данные сохранятся.": "PlayPos hozir yangilansinmi? Dastur taxminan bir daqiqaga yopiladi va qayta ochiladi. Ma'lumotlar saqlanadi.",
     "Сохраняем резервную копию и устанавливаем обновление…": "Zaxira nusxa saqlanmoqda va yangilanish o'rnatilmoqda…",
     "Когда компьютер подключён к интернету, PlayPos сам проверяет обновления каждые 4 часа и скачивает их в фоне. Установка — по кнопке «Обновить сейчас» или автоматически при закрытии программы.": "Kompyuter internetga ulanganda PlayPos har 4 soatda yangilanishlarni o'zi tekshiradi va fonda yuklab oladi. O'rnatish — «Hozir yangilash» tugmasi orqali yoki dastur yopilganda avtomatik.",
+    // Скидки и оплата частями
+    "Скидки и изменение оплаты": "Chegirmalar va to'lovni o'zgartirish", "Скидка при оплате; исправить способ оплаты уже оплаченного счёта": "To'lovda chegirma; to'langan hisobning to'lov usulini tuzatish",
+    "Наличные + карта": "Naqd + karta", "наличные + карта": "naqd + karta", "Наличными": "Naqd pulda", "Картой": "Karta orqali", "Скидка, сум": "Chegirma, so'm", "Без скидки": "Chegirmasiz",
+    "Скидка": "Chegirma", "скидка": "chegirma", "Скидки": "Chegirmalar", "к оплате со скидкой": "chegirma bilan to'lovga", "Изменить оплату": "To'lovni o'zgartirish", "Оплата изменена": "To'lov o'zgartirildi",
+    "Изменить оплату нельзя: смена закрыта или был возврат": "To'lovni o'zgartirib bo'lmaydi: smena yopilgan yoki qaytarish bo'lgan",
+    "Смена этого счёта уже закрыта — изменить оплату нельзя": "Bu hisobning smenasi yopilgan — to'lovni o'zgartirib bo'lmaydi",
+    "По счёту уже был возврат — изменить оплату нельзя": "Hisob bo'yicha qaytarish bo'lgan — to'lovni o'zgartirib bo'lmaydi",
+    "Скидка больше суммы счёта": "Chegirma hisob summasidan katta", "Наличными больше, чем к оплате": "Naqd pul to'lov summasidan ko'p", "Сохранить": "Saqlash", "сейчас:": "hozir:",
     // Просрочка
     "Доплата за просрочку, сум за 1 минуту": "Kechikish uchun qo'shimcha to'lov, 1 daqiqa uchun so'm", "как в поминутном тарифе:": "daqiqalik tarifdagidek:",
     "Когда время вышло, при нажатии «Счёт» или «Выход» доплата за каждую начатую минуту добавляется сама. Пустое поле — цена из поминутного тарифа, 0 — не начислять.": "Vaqt tugaganda «Hisob» yoki «Chiqish» bosilsa, har bir boshlangan daqiqa uchun qo'shimcha to'lov o'zi qo'shiladi. Bo'sh maydon — daqiqalik tarif narxi, 0 — hisoblanmaydi.",
