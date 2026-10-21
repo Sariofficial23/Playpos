@@ -236,3 +236,12 @@ tfoot td { border-top: 2px solid var(--line); border-bottom: 0; }
 /* Значок принтера в меню (версия для Windows) */
 .prchip { display: block; font-size: 12px; font-weight: 800; padding: 6px 8px; border-radius: 10px; margin-bottom: 8px; background: var(--surface); }
 .prchip.green { color: var(--ok); } .prchip.red { color: var(--danger); background: var(--danger-bg); } .prchip.grey { color: var(--muted); }
+
+/* Поминутный тариф (VIP): таймер идёт вверх, сумма растёт */
+.card.vip { background: #f1efff; border-color: #c9c2fb; } .card.vip .time { color: #4b3cc4; }
+.lrow.vip .dot { background: #6c5ce7; } .lrow.vip .tm { color: #4b3cc4; } .lrow.vip .cl { color: #6c5ce7; }
+.cat-vip span { background: #6c5ce7; color: #fff; }
+.cat.on.cat-vip { border-color: #6c5ce7; background: #f1efff; color: #3a2d9c; }
+.lrow .pd.vip, .chip.vip { background: #6c5ce7; color: #fff; }
+.vipsum { color: #4b3cc4; font-weight: 900; }
+.vipcost { align-self: center; padding: 6px 12px; border-radius: 10px; background: #f1efff; color: #3a2d9c; font-weight: 900; font-size: 15px; white-space: nowrap; font-variant-numeric: tabular-nums; }

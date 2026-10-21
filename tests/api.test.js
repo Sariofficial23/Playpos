@@ -61,6 +61,26 @@ test("PlayPos API", { skip }, async (t) => {
     assert.equal(close.data.diff, 0); // карта не меняет наличный остаток
   });
 
+  await t.test("поминутный тариф: сумма за каждую начатую минуту при выходе, без продления", async () => {
+    assert.equal((await call(handler, owner, { op: "tariff.save", name: "VIP", price: 1000, perMinute: true })).status, 200);
+    const vip = (await call(handler, owner, { op: "state" })).data.tariffs.find((x) => x.perMinute);
+    assert.equal(vip.use, "base");
+    const v = (await call(handler, owner, { op: "visit.create", child: "Али", tariffId: vip.id })).data;
+    assert.equal(v.billId, null);
+    assert.equal((await call(handler, owner, { op: "visit.extend", visitId: v.visitId, tariffId: tariff10.id, from: "prev" })).status, 409);
+    assert.equal((await call(handler, owner, { op: "visit.checkout", visitId: v.visitId, exit: false, method: "cash" })).status, 400);
+    await sql`update visits set start_at = now() - interval '30 minutes 10 seconds' where id = ${v.visitId}`;
+    await call(handler, owner, { op: "shift.open", openingCash: 0 });
+    const out = await call(handler, owner, { op: "visit.checkout", visitId: v.visitId, exit: true, method: "cash" });
+    assert.equal(out.status, 200);
+    const s2 = (await call(handler, owner, { op: "state" })).data;
+    const bill = s2.bills.find((b) => b.id === out.data.paid[0]);
+    assert.equal(bill.status, "paid");
+    assert.equal(bill.items[0].amount, 31 * 1000);
+    assert.equal(bill.items[0].minutes, 31);
+    assert.ok(s2.visits.find((x) => x.id === v.visitId).exitAt);
+  });
+
   await t.test("площадки изолированы: чужие данные не видны и не меняются", async () => {
     const [tb] = await sql`insert into tenants (name) values ('B') returning id`;
     const { default: bcrypt } = await import("bcryptjs");

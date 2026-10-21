@@ -123,9 +123,17 @@
   const visitBills = (v) => S.bills.filter((b) => b.visitId === v.id && b.status !== "cancelled");
   const openBills = (v) => visitBills(v).filter((b) => b.status === "open");
   const myShift = () => S.shifts.find((s) => s.staffId === S.currentUserId && !s.closedAt);
-  const activeTariffs = (use) => S.tariffs.filter((t) => !t.archived && (t.use === "both" || t.use === use)).sort((a, b) => a.minutes - b.minutes);
+  const activeTariffs = (use) => S.tariffs.filter((t) => !t.archived && (t.use === "both" || t.use === use) && !(use === "ext" && t.perMinute))
+    .sort((a, b) => a.perMinute - b.perMinute || a.minutes - b.minutes);
+  // Поминутный тариф (VIP): каждая начатая минута по цене на момент входа, оплата при выходе
+  const isOpenRate = (v) => v.rate != null && !v.exitAt;
+  const openMins = (v) => Math.max(1, Math.ceil((now() - v.start) / MIN));
+  const openDue = (v) => openMins(v) * v.rate;
+  const timerText = (v) => (isOpenRate(v) ? clock(now() - v.start) : (status(v) === "bad" ? "+" : "") + clock(v.end - now()));
+  const tariffPrice = (t) => (t.perMinute ? money(t.price) + "/мин" : money(t.price));
   function status(v) {
     if (v.exitAt) return "done";
+    if (v.rate != null) return "vip";
     const left = v.end - now();
     if (left <= 0) return "bad";
     if (left <= S.settings.warn * MIN || v.minutes <= S.settings.warn) return "warn";
@@ -200,9 +208,12 @@
         <button class="btn" id="nvPay">Начать и оплатить</button>
       </div></div>`, (m) => {
       const draw = () => {
-        $("#nvT", m).innerHTML = tariffs.map((t) => `<button class="pick ${t.id === sel ? "on" : ""}" data-t="${t.id}"><b>${esc(t.name)}</b><small>${money(t.price)}</small></button>`).join("");
+        $("#nvT", m).innerHTML = tariffs.map((t) => `<button class="pick ${t.id === sel ? "on" : ""}" data-t="${t.id}"><b>${esc(t.name)}</b><small>${tariffPrice(t)}</small></button>`).join("");
         const t = tariffs.find((x) => x.id === sel);
-        $("#nvSum", m).innerHTML = `Начало: <b>${hm(now())}</b> · окончание: <b>${hm(now() + t.minutes * MIN)}</b><br>К оплате: <b>${money(t.price)}</b>`;
+        $("#nvSum", m).innerHTML = t.perMinute
+          ? `Начало: <b>${hm(now())}</b> · поминутно: <b>${money(t.price)}</b> за минуту<br>Сумма посчитается при выходе по фактическому времени.`
+          : `Начало: <b>${hm(now())}</b> · окончание: <b>${hm(now() + t.minutes * MIN)}</b><br>К оплате: <b>${money(t.price)}</b>`;
+        $("#nvPay", m).style.display = t.perMinute ? "none" : "";
       };
       draw();
       $("#nvT", m).onclick = (e) => { const b = e.target.closest("[data-t]"); if (b) { sel = b.dataset.t; draw(); } };
@@ -226,6 +237,7 @@
 
   function extendDialog(v) {
     if (!can("extend")) return toast("Нет права на продление", "bad");
+    if (isOpenRate(v)) return toast("Поминутный тариф продлевать не нужно — сумма считается при выходе", "warn");
     const tariffs = activeTariffs("ext");
     if (!tariffs.length) return toast("Нет тарифов для продления", "warn");
     let sel = tariffs[0].id, from = "prev";
@@ -317,8 +329,10 @@
 
   /* Панель выхода: всегда видно, как и кем оплачено, и что ещё нужно взять */
   function checkoutPanel(v, exit) {
+    if (isOpenRate(v)) exit = true; // поминутный тариф оплачивается только при выходе
     if (exit && !can("finish")) return toast("Нет права завершать посещения", "bad");
     const bills = visitBills(v), open = bills.filter((b) => b.status === "open");
+    if (isOpenRate(v)) return openRatePanel(v);
     if (open.length && !can("pay")) return toast("Есть неоплаченный счёт — нужен сотрудник с правом оплаты", "bad");
     if (open.length && !requireShift()) return;
     let method = "cash";
@@ -349,6 +363,42 @@
         if (out.paid.length && S.settings.autoReceipt !== false) printReceipt(S.bills.filter((b) => out.paid.includes(b.id)));
         close();
         toast(`${esc(v.child)}: ${due ? `оплачено ${money(due)} (${methodName(method).toLowerCase()})` : "оплачено ранее"}${exit ? ", выход отмечен" : ""}`);
+      };
+    }, { side: true });
+  }
+
+  // Выход с поминутного тарифа: сумма растёт, пока панель открыта; окончательную сумму считает сервер
+  function openRatePanel(v) {
+    if (!can("pay")) return toast("Поминутный тариф оплачивается при выходе — нужен сотрудник с правом оплаты", "bad");
+    if (!requireShift()) return;
+    let method = "cash";
+    modal(`<div class="dlg">
+      <button class="xbtn" data-x aria-label="Закрыть">×</button>
+      <h2>Выход ребёнка</h2>
+      <div class="sub">${esc(v.child)} · вход ${hm(v.start)} · ${esc(v.tariffName)}</div>
+      <div class="lines" id="orL"></div>
+      <div class="tot"><span>К оплате</span><b id="orT"></b></div>
+      ${payButtons()}
+      <div class="row" style="margin-top:16px"><button class="btn big" id="coOk" style="flex:1">Подтвердить оплату и выход</button></div>
+    </div>`, (m) => {
+      const draw = () => {
+        if (!m.isConnected) return clearInterval(iv);
+        $("#orL", m).innerHTML = `<div class="ln"><span>На площадке</span><span>${clock(now() - v.start)}</span></div>
+          <div class="ln"><span>${openMins(v)} мин × ${money(v.rate)}</span><span>${money(openDue(v))}</span></div>`;
+        $("#orT", m).textContent = money(openDue(v));
+      };
+      const iv = setInterval(draw, 1000); draw();
+      mountPay(m, (x) => (method = x));
+      $("[data-x]", m).onclick = () => { clearInterval(iv); close(); };
+      $("#coOk", m).onclick = async (e) => {
+        busy(e.target, true);
+        const out = await act("visit.checkout", { visitId: v.id, exit: true, method });
+        if (!out) return busy(e.target, false);
+        clearInterval(iv);
+        const paid = S.bills.filter((b) => out.paid.includes(b.id));
+        if (paid.length && S.settings.autoReceipt !== false) printReceipt(paid);
+        close();
+        toast(`${esc(v.child)}: оплачено ${money(paid.reduce((a, b) => a + billTotal(b), 0))} (${methodName(method).toLowerCase()}), выход отмечен`);
       };
     }, { side: true });
   }
@@ -481,7 +531,7 @@
     sendToPrinter([
       R.title(S.settings.venue), R.center(`Талон посещения №${v.no}`), R.hr(),
       R.row("Ребёнок", v.child), R.row("Дата", new Date(v.start).toLocaleDateString("ru-RU", { timeZone: TZ })),
-      R.row("Начало", hm(v.start)), R.row("Окончание", hm(v.end)), R.row("Тариф", v.tariffName), R.hr(),
+      R.row("Начало", hm(v.start)), ...(isOpenRate(v) ? [R.row("Тариф", `${v.tariffName}, ${money(v.rate)}/мин`), R.row("Оплата", "при выходе")] : [R.row("Окончание", hm(v.end)), R.row("Тариф", v.tariffName)]), R.hr(),
       ...bills.flatMap((b) => [R.text(`Счёт №${b.no}`), ...b.items.map((i) => R.row(i.title, money(i.amount))), R.row("Итого", money(billTotal(b))),
         ...(b.status === "paid" ? [R.row("Оплачено", methodName(b.method) + " " + dt(b.paidAt)), R.row("Кассир", staffName(b.paidBy))] : [R.row("Статус", "НЕ ОПЛАЧЕН")]), R.hr()]),
       R.center(unpaid ? "Счёт ещё открыт" : "Счёт оплачен"), R.center("Не является фискальным чеком"),
@@ -550,15 +600,17 @@
 
   function tariffDialog(t) {
     const isNew = !t;
-    const d = t || { name: "", minutes: 30, price: 25000, use: "both" };
+    const d = t || { name: "", minutes: 30, price: 25000, use: "both", perMinute: false };
     modal(`<div class="dlg"><h2>${isNew ? "Новый тариф" : "Изменить тариф"}</h2>
       <label class="f">Название</label><input class="input" id="tfName" value="${esc(d.name)}" placeholder="Например, 30 минут" autofocus maxlength="40">
+      <label class="f">Тип тарифа</label>
+      <div class="seg" id="tfK"><button data-k="fixed" class="${d.perMinute ? "" : "on"}">Фиксированное время</button><button data-k="pm" class="${d.perMinute ? "on" : ""}">Поминутно (VIP)</button></div>
       <div class="grid2">
-        <div><label class="f">Длительность, минут</label><input class="input" id="tfMin" type="number" min="1" max="1440" value="${d.minutes}"></div>
-        <div><label class="f">Цена, сум</label><input class="input" id="tfPrice" type="number" min="0" step="1000" value="${d.price}"></div>
+        <div class="tfFix"><label class="f">Длительность, минут</label><input class="input" id="tfMin" type="number" min="1" max="1440" value="${d.minutes}"></div>
+        <div><label class="f" id="tfPL">Цена, сум</label><input class="input" id="tfPrice" type="number" min="0" step="100" value="${d.price}"></div>
       </div>
-      <label class="f">Где использовать</label>
-      <select class="input" id="tfUse">
+      <label class="f tfFix">Где использовать</label>
+      <select class="input tfFix" id="tfUse">
         <option value="both" ${d.use === "both" ? "selected" : ""}>Вход и продление</option>
         <option value="base" ${d.use === "base" ? "selected" : ""}>Только вход</option>
         <option value="ext" ${d.use === "ext" ? "selected" : ""}>Только продление</option>
@@ -566,14 +618,23 @@
       <div class="summary" id="tfPpm"></div>
       ${isNew ? "" : `<p style="color:var(--muted);font-size:13px">Изменение цены не меняет уже выставленные счета — в них сохранён снимок цены.</p>`}
       <div class="foot"><button class="btn ghost" data-x>Отмена</button><button class="btn" id="tfOk">Сохранить</button></div></div>`, (m) => {
-      const ppm = () => { const mi = +$("#tfMin", m).value || 1, p = +$("#tfPrice", m).value || 0; $("#tfPpm", m).innerHTML = `Цена за минуту: <b>${money(p / mi)}</b> · за час: <b>${money((p / mi) * 60)}</b>`; };
+      let pm = !!d.perMinute;
+      const ppm = () => {
+        m.querySelectorAll(".tfFix").forEach((x) => (x.style.display = pm ? "none" : ""));
+        m.querySelectorAll("#tfK button").forEach((b) => b.classList.toggle("on", (b.dataset.k === "pm") === pm));
+        $("#tfPL", m).textContent = pm ? "Цена за 1 минуту, сум" : "Цена, сум";
+        const mi = pm ? 1 : +$("#tfMin", m).value || 1, p = +$("#tfPrice", m).value || 0;
+        $("#tfPpm", m).innerHTML = (pm ? "Таймер идёт вверх, сумма считается при выходе по каждой начатой минуте.<br>" : "") +
+          `Цена за минуту: <b>${money(p / mi)}</b> · за 30 минут: <b>${money((p / mi) * 30)}</b> · за час: <b>${money((p / mi) * 60)}</b>`;
+      };
       ppm(); $("#tfMin", m).oninput = ppm; $("#tfPrice", m).oninput = ppm;
+      $("#tfK", m).onclick = (e) => { const b = e.target.closest("[data-k]"); if (b) { pm = b.dataset.k === "pm"; if (pm && isNew && +$("#tfPrice", m).value >= 10000) $("#tfPrice", m).value = 1000; ppm(); } };
       $("[data-x]", m).onclick = close;
       $("#tfOk", m).onclick = async (e) => {
-        const name = $("#tfName", m).value.trim(), minutes = Math.round(+$("#tfMin", m).value), price = Math.round(+$("#tfPrice", m).value);
+        const name = $("#tfName", m).value.trim(), minutes = pm ? 1 : Math.round(+$("#tfMin", m).value), price = Math.round(+$("#tfPrice", m).value);
         if (!name || !(minutes > 0) || !(price >= 0)) return toast("Проверьте название, минуты и цену", "bad");
         busy(e.target, true);
-        if (await act("tariff.save", { id: t && t.id, name, minutes, price, use: $("#tfUse", m).value }, "Сохранено")) close(); else busy(e.target, false);
+        if (await act("tariff.save", { id: t && t.id, name, minutes, price, use: $("#tfUse", m).value, perMinute: pm }, "Сохранено")) close(); else busy(e.target, false);
       };
     });
   }
@@ -659,16 +720,16 @@
   }
 
   function card(v) {
-    const st = status(v), left = v.end - now();
+    const st = status(v), vip = st === "vip";
     const paid = openBills(v).length === 0;
-    const label = { ok: "Играет", warn: "Скоро заканчивается", bad: "Время вышло — позовите ребёнка" }[st];
+    const label = { ok: "Играет", warn: "Скоро заканчивается", bad: "Время вышло — позовите ребёнка", vip: "Поминутно" }[st];
     return `<div class="card ${st}" data-v="${v.id}">
-      <div class="head"><h3>${esc(v.child)}</h3><span class="chip ${paid ? "paid" : "open"}">${paid ? "✓ оплачен" : "● не оплачен"}</span></div>
-      <div class="time" data-t="${v.id}">${st === "bad" ? "+" : ""}${clock(left)}</div>
-      <div class="st">${label}</div>
-      <div class="meta">${hm(v.start)} → ${hm(v.end)} · ${esc(v.tariffName)}${v.ext.length ? ` · продлений: ${v.ext.length}` : ""}</div>
+      <div class="head"><h3>${esc(v.child)}</h3>${vip ? `<span class="chip vip">при выходе</span>` : `<span class="chip ${paid ? "paid" : "open"}">${paid ? "✓ оплачен" : "● не оплачен"}</span>`}</div>
+      <div class="time" data-t="${v.id}">${timerText(v)}</div>
+      <div class="st">${label}${vip ? ` · <span class="vipsum" data-s="${v.id}">${money(openDue(v))}</span>` : ""}</div>
+      <div class="meta">${vip ? `вход ${hm(v.start)} · ${esc(v.tariffName)} · ${money(v.rate)}/мин` : `${hm(v.start)} → ${hm(v.end)} · ${esc(v.tariffName)}${v.ext.length ? ` · продлений: ${v.ext.length}` : ""}`}</div>
       <div class="acts">
-        ${can("extend") ? `<button class="btn sm extend wide" data-a="extend">⏩ Продлить</button>` : ""}
+        ${can("extend") && !vip ? `<button class="btn sm extend wide" data-a="extend">⏩ Продлить</button>` : ""}
         ${can("finish") ? `<button class="btn sm" data-a="finish">Завершить</button>` : ""}
         ${can("pay") && !paid ? `<button class="btn sm sun" data-a="bill">Счёт</button>` : ""}
         ${can("print") ? `<button class="btn sm ghost" data-a="print">Талон</button>` : ""}
@@ -676,7 +737,7 @@
   }
 
   /* Категории площадки — фильтр над списком */
-  const CATS = [["all", "Все"], ["bad", "Время вышло"], ["warn", "Скоро заканчивается"], ["ok", "Играет"], ["unpaid", "Не оплачены"]];
+  const CATS = [["all", "Все"], ["bad", "Время вышло"], ["warn", "Скоро заканчивается"], ["ok", "Играет"], ["vip", "Поминутно"], ["unpaid", "Не оплачены"]];
   function inCat(v, c) {
     if (c === "all") return true;
     if (c === "unpaid") return openBills(v).length > 0;
@@ -689,15 +750,19 @@
 
   /* Компактная строка списка — помещается 20–30 детей на одном экране моноблока */
   function row(v) {
-    const st = status(v), paid = openBills(v).length === 0;
+    const st = status(v), vip = st === "vip", paid = openBills(v).length === 0;
+    const hide = 'style="visibility:hidden" tabindex="-1"';
     return `<div class="lrow ${st}" data-v="${v.id}">
       <span class="dot"></span>
-      <div class="nm"><b>${esc(v.child)}</b><small><span class="cl">${CATS.find((c) => c[0] === st)[1]}</span> · ${hm(v.start)}–${hm(v.end)} · ${esc(v.tariffName)}${v.ext.length ? " · +" + v.ext.length : ""}</small></div>
-      <div class="tm" data-t="${v.id}">${st === "bad" ? "+" : ""}${clock(v.end - now())}</div>
-      <span class="pd ${paid ? "paid" : "open"}" title="${paid ? "Оплачен" : "Не оплачен"}">${paid ? "✓" : "!"}</span>
+      <div class="nm"><b>${esc(v.child)}</b><small><span class="cl">${CATS.find((c) => c[0] === st)[1]}</span> · ${vip
+        ? `${hm(v.start)} → · ${esc(v.tariffName)} · ${money(v.rate)}/мин`
+        : `${hm(v.start)}–${hm(v.end)} · ${esc(v.tariffName)}${v.ext.length ? " · +" + v.ext.length : ""}`}</small></div>
+      <div class="tm" data-t="${v.id}">${timerText(v)}</div>
+      ${vip ? `<span class="pd vip" title="Оплата при выходе">⏱</span>` : `<span class="pd ${paid ? "paid" : "open"}" title="${paid ? "Оплачен" : "Не оплачен"}">${paid ? "✓" : "!"}</span>`}
       <div class="ra">
+        ${vip ? `<span class="vipcost" title="Сумма на сейчас" data-s="${v.id}">${money(openDue(v))}</span>` : `
         ${can("extend") ? `<button class="btn sm extend" data-a="extend">⏩ Продлить</button>` : ""}
-        ${can("pay") ? `<button class="btn sm sun" data-a="bill" ${paid ? 'style="visibility:hidden" tabindex="-1"' : ""}>Счёт</button>` : ""}
+        ${can("pay") ? `<button class="btn sm sun" data-a="bill" ${paid ? hide : ""}>Счёт</button>` : ""}`}
         ${can("finish") ? `<button class="btn sm" data-a="finish">Выход</button>` : ""}
         ${can("print") ? `<button class="btn sm ghost" data-a="print" title="Талон">🖨</button>` : ""}
       </div></div>`;
@@ -705,7 +770,7 @@
 
   function floorCards() {
     const q = ui.search.toLowerCase();
-    const order = { bad: 0, warn: 1, ok: 2 };
+    const order = { bad: 0, warn: 1, ok: 2, vip: 3 };
     const list = S.visits.filter((v) => !v.exitAt && inCat(v, ui.cat) && (!q || v.child.toLowerCase().includes(q)))
       .sort((a, b) => order[status(a)] - order[status(b)] || a.end - b.end);
     return list.length ? list.map(ui.layout === "list" ? row : card).join("") : `<div class="empty" style="grid-column:1/-1">${ui.cat === "all" ? "Сейчас на площадке никого нет. Нажмите «Новое посещение»." : "В этой категории сейчас никого нет."}</div>`;
@@ -768,9 +833,10 @@
   function viewVisits() {
     const rows = [...S.visits].sort((a, b) => b.start - a.start).map((v) => {
       const st = status(v), sum = visitBills(v).reduce((a, b) => a + billTotal(b), 0), paid = openBills(v).length === 0;
-      return `<tr><td>№${v.no}</td><td><b>${esc(v.child)}</b></td><td>${dt(v.start)}</td><td>${hm(v.end)}</td><td>${v.exitAt ? hm(v.exitAt) : "—"}</td>
+      const vip = isOpenRate(v);
+      return `<tr><td>№${v.no}</td><td><b>${esc(v.child)}</b></td><td>${dt(v.start)}</td><td>${vip ? "поминутно" : hm(v.end)}</td><td>${v.exitAt ? hm(v.exitAt) : "—"}</td>
         <td>${st === "done" ? `<span class="tag grey">завершено</span>` : st === "bad" ? `<span class="tag red">просрочено</span>` : `<span class="tag green">на площадке</span>`}</td>
-        <td class="num">${money(sum)}</td><td>${paid ? `<span class="tag green">оплачен</span><br><small>${[...new Set(visitBills(v).map((b) => methodName(b.method)))].join(" + ")}</small>` : `<span class="tag red">открыт</span>`}</td>
+        <td class="num">${money(vip ? openDue(v) : sum)}</td><td>${vip ? `<span class="tag grey">при выходе</span>` : paid ? `<span class="tag green">оплачен</span><br><small>${[...new Set(visitBills(v).map((b) => methodName(b.method)))].join(" + ")}</small>` : `<span class="tag red">открыт</span>`}</td>
         <td>${can("print") ? `<button class="btn sm ghost" data-p="${v.id}">Талон</button>` : ""}</td></tr>`;
     }).join("");
     return shell("Посещения", "", `<div class="panel tbl"><table><thead><tr><th>№</th><th>Ребёнок</th><th>Начало</th><th>План. конец</th><th>Выход</th><th>Статус</th><th class="num">Сумма</th><th>Оплата</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>`);
@@ -920,13 +986,13 @@
   }
 
   function viewTariffs() {
-    const list = [...S.tariffs].sort((a, b) => a.archived - b.archived || a.minutes - b.minutes);
+    const list = [...S.tariffs].sort((a, b) => a.archived - b.archived || a.perMinute - b.perMinute || a.minutes - b.minutes);
     const useName = { both: "вход и продление", base: "только вход", ext: "только продление" };
     return shell("Тарифы", `<button class="btn" id="at">＋ Новый тариф</button>`,
       `<div class="panel"><h2>Ваши тарифы</h2><div class="tariffs">${list.map((t) => `<div class="tariff ${t.archived ? "arch" : ""}">
-        <div class="mins">${t.minutes >= 60 && t.minutes % 60 === 0 ? t.minutes / 60 + " ч" : t.minutes + " мин"}</div>
-        <b>${esc(t.name)}</b><div class="pr">${money(t.price)}</div>
-        <small style="color:var(--muted)">${useName[t.use]} · ${money(t.price / t.minutes)}/мин</small>
+        <div class="mins">${t.perMinute ? "VIP" : t.minutes >= 60 && t.minutes % 60 === 0 ? t.minutes / 60 + " ч" : t.minutes + " мин"}</div>
+        <b>${esc(t.name)}</b><div class="pr">${tariffPrice(t)}</div>
+        <small style="color:var(--muted)">${t.perMinute ? "поминутно, оплата при выходе" : `${useName[t.use]} · ${money(t.price / t.minutes)}/мин`}</small>
         <div class="row" style="margin-top:6px">${t.archived ? `<button class="btn sm ghost" data-r="${t.id}">Вернуть</button>` : `<button class="btn sm ghost" data-e="${t.id}">Изменить</button><button class="btn sm ghost" data-ar="${t.id}">В архив</button>`}</div>
       </div>`).join("")}</div>
       <p style="color:var(--muted);font-size:13px">Тарифы не удаляются, а архивируются: история посещений и счетов сохраняет цену на момент продажи.</p></div>
@@ -1081,7 +1147,11 @@
     if (floorSig() !== ui.sig) { ui.sig = floorSig(); $("#cats").innerHTML = catTabs(); $("#grid").innerHTML = floorCards(); return; }
     document.querySelectorAll("[data-t]").forEach((el) => {
       const v = S.visits.find((x) => x.id === el.dataset.t);
-      if (v) el.textContent = (status(v) === "bad" ? "+" : "") + clock(v.end - now());
+      if (v) el.textContent = timerText(v);
+    });
+    document.querySelectorAll("[data-s]").forEach((el) => {
+      const v = S.visits.find((x) => x.id === el.dataset.s);
+      if (v && isOpenRate(v)) el.textContent = money(openDue(v));
     });
   }
 
