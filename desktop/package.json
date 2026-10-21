@@ -1,7 +1,7 @@
 {
   "name": "playpos-desktop",
   "productName": "PlayPos",
-  "version": "1.2.0",
+  "version": "1.2.1",
   "description": "PlayPos — касса и таймеры для детской площадки",
   "author": "PlayPos",
   "private": true,

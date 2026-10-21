@@ -53,12 +53,15 @@ ipcMain.handle("printers", (e) => listPrinters(e.sender).catch(() => []));
 // Печать чека без окна: на выбранный в настройках принтер, иначе на принтер по умолчанию
 ipcMain.handle("print", async (e, opts = {}) => {
   const deviceName = typeof opts.deviceName === "string" ? opts.deviceName : "";
+  // Страница ровно по чеку: 58/80 мм в ширину, длина по содержимому (иначе драйвер прогоняет пустую ленту)
+  const w = Number(opts.widthMicrons), h = Number(opts.heightMicrons);
+  const pageSize = w >= 40000 && w <= 120000 && h >= 30000 && h <= 3000000 ? { width: Math.round(w), height: Math.round(h) } : undefined;
   if (deviceName) {
     const all = await e.sender.getPrintersAsync();
     if (!all.some((p) => p.name === deviceName)) return { ok: false, reason: "Принтер не найден в Windows" };
   }
   return new Promise((resolve) => {
-    e.sender.print({ silent: true, printBackground: false, margins: { marginType: "none" }, ...(deviceName ? { deviceName } : {}) },
+    e.sender.print({ silent: true, printBackground: false, margins: { marginType: "none" }, ...(deviceName ? { deviceName } : {}), ...(pageSize ? { pageSize } : {}) },
       (ok, reason) => resolve({ ok, reason }));
   });
 });

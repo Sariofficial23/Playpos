@@ -378,12 +378,27 @@
     return new Promise((resolve) => setTimeout(async () => {
       if (!window.PlayPosDesktop) { window.print(); return resolve({ ok: true }); }
       let r;
-      try { r = await window.PlayPosDesktop.print({ deviceName: deviceName || S.settings.receiptPrinter || "" }); }
+      try { r = await window.PlayPosDesktop.print({ deviceName: deviceName || S.settings.receiptPrinter || "", ...ticketSize(rows, paper) }); }
       catch (e) { r = { ok: false, reason: String(e && e.message || e) }; }
       // чек после оплаты: если тихая печать не удалась — обычное окно печати, чтобы чек всё равно вышел
       if ((!r || !r.ok) && !deviceName) window.print();
       resolve(r || { ok: false });
     }, 80));
+  }
+
+  // Размер страницы под чек: ширина ленты и длина ровно по содержимому (в микронах),
+  // чтобы драйвер термопринтера не прогонял лишнюю пустую ленту после короткого чека
+  function ticketSize(rows, paper) {
+    const box = document.createElement("div");
+    box.style.cssText = `position:absolute;left:-10000px;top:0;width:${paper === 80 ? 72 : 48}mm;font-family:"Courier New",monospace;font-size:12px;line-height:1.35`;
+    box.innerHTML = `<div class="ticket-measure">${rowsHtml(rows)}</div>`;
+    box.querySelectorAll("h3").forEach((h) => (h.style.cssText = "margin:0 0 4px;font-size:15px"));
+    box.querySelectorAll("hr").forEach((h) => (h.style.cssText = "border:0;border-top:1px dashed #000;margin:6px 0"));
+    document.body.appendChild(box);
+    const px = box.getBoundingClientRect().height;
+    box.remove();
+    const MICRONS_PER_PX = 25400 / 96;
+    return { widthMicrons: paper * 1000, heightMicrons: Math.max(50000, Math.round(px * MICRONS_PER_PX) + 15000) };
   }
 
   /* ---------- Принтеры (версия для Windows) ---------- */
