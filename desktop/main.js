@@ -4,12 +4,14 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { startCore } from "./core.js";
 import { listPrinters } from "./printers.js";
+import { initUpdater } from "./updater.js";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const PORT = 3700;
 let core = null;
 let win = null;
 let quitting = false;
+let updater = null;
 
 if (!app.requestSingleInstanceLock()) app.quit(); // вторая копия программы просто открывает первую
 app.on("second-instance", () => { if (win) { if (win.isMinimized()) win.restore(); win.focus(); } });
@@ -35,6 +37,12 @@ function buildMenu() {
     { label: "Касса", submenu: [
       { label: "Обновить", accelerator: "F5", click: () => win && win.reload() },
       { label: "Во весь экран", accelerator: "F11", click: () => win && win.setFullScreen(!win.isFullScreen()) },
+      { label: "Проверить обновления", click: async () => {
+        const s = await updater.check();
+        const text = { latest: "У вас последняя версия.", downloading: `Скачивается версия ${s.version}. Когда загрузится, в кассе появится кнопка «Обновить сейчас».`,
+          ready: `Версия ${s.version} загружена. Нажмите «Обновить сейчас» в кассе.`, error: "Не удалось проверить — нет интернета или сервер недоступен.", dev: "Режим разработки — обновления отключены." }[s.state] || "Проверка…";
+        dialog.showMessageBox(win, { message: `PlayPos ${app.getVersion()}`, detail: text });
+      } },
       { type: "separator" },
       { label: "Выход", role: "quit" },
     ] },
@@ -65,6 +73,17 @@ ipcMain.handle("print", async (e, opts = {}) => {
       (ok, reason) => resolve({ ok, reason }));
   });
 });
+// Обновления: состояние, ручная проверка и установка (перед установкой — резервная копия и остановка базы)
+ipcMain.handle("update-state", () => updater.state());
+ipcMain.handle("update-check", () => updater.check());
+ipcMain.handle("update-install", async () => {
+  if (!updater.ready() || quitting) return false;
+  quitting = true;
+  await core.backup("update").catch(() => {});
+  await core.stop().catch(() => {});
+  updater.install();
+  return true;
+});
 ipcMain.handle("open-printer-settings", () => shell.openExternal(process.platform === "win32" ? "ms-settings:printers" : "about:blank"));
 
 app.whenReady().then(async () => {
@@ -90,6 +109,7 @@ app.whenReady().then(async () => {
     callback(details.deviceList[0] ? details.deviceList[0].deviceId : "");
   });
   if (app.isPackaged) app.setLoginItemSettings({ openAtLogin: true }); // касса стартует вместе с Windows
+  updater = initUpdater({ app, send: (s) => { if (win && !win.isDestroyed()) win.webContents.send("update", s); } });
   buildMenu();
   createWindow();
 });

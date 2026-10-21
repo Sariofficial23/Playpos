@@ -37,6 +37,17 @@
     "Детей на площадке": "Maydonchadagi bolalar", "Просрочено": "Muddati o'tgan", "Не оплачено": "To'lanmagan",
     "Получено сегодня": "Bugun olindi", "Поиск по имени": "Ism bo'yicha qidirish", "☰ Список": "☰ Ro'yxat", "▦ Плитки": "▦ Kartochkalar",
     "Время вышло": "Vaqt tugadi", "Скоро заканчивается": "Tez orada tugaydi", "Играет": "O'ynamoqda", "Не оплачены": "To'lanmagan",
+    // Обновления программы
+    "Обновить сейчас": "Hozir yangilash", "Обновления": "Yangilanishlar", "↻ Проверить обновления": "↻ Yangilanishlarni tekshirish", "Версия программы:": "Dastur versiyasi:",
+    "Режим разработки — обновления отключены": "Ishlab chiqish rejimi — yangilanishlar o'chirilgan", "Проверяем обновления…": "Yangilanishlar tekshirilmoqda…",
+    "У вас последняя версия": "Sizda oxirgi versiya", "Скачивается версия": "Versiya yuklab olinmoqda", "загружена и готова к установке": "yuklab olindi va o'rnatishga tayyor",
+    "Не удалось проверить: нет интернета. Программа проверит позже сама": "Tekshirib bo'lmadi: internet yo'q. Dastur keyinroq o'zi tekshiradi",
+    "Проверка начнётся через минуту после запуска": "Tekshiruv ishga tushirilgandan bir daqiqa keyin boshlanadi",
+    "Загружена новая версия PlayPos": "PlayPos'ning yangi versiyasi yuklab olindi",
+    "Обновление займёт около минуты, дети на площадке, таймеры и счета сохранятся.": "Yangilash taxminan bir daqiqa davom etadi, maydonchadagi bolalar, taymerlar va hisoblar saqlanadi.",
+    "Обновить PlayPos сейчас? Программа закроется примерно на минуту и откроется снова. Данные сохранятся.": "PlayPos hozir yangilansinmi? Dastur taxminan bir daqiqaga yopiladi va qayta ochiladi. Ma'lumotlar saqlanadi.",
+    "Сохраняем резервную копию и устанавливаем обновление…": "Zaxira nusxa saqlanmoqda va yangilanish o'rnatilmoqda…",
+    "Когда компьютер подключён к интернету, PlayPos сам проверяет обновления каждые 4 часа и скачивает их в фоне. Установка — по кнопке «Обновить сейчас» или автоматически при закрытии программы.": "Kompyuter internetga ulanganda PlayPos har 4 soatda yangilanishlarni o'zi tekshiradi va fonda yuklab oladi. O'rnatish — «Hozir yangilash» tugmasi orqali yoki dastur yopilganda avtomatik.",
     // Поминутный тариф (VIP)
     "Поминутный тариф продлевать не нужно — сумма считается при выходе": "Daqiqalik tarifni uzaytirish shart emas — summa chiqishda hisoblanadi",
     "Поминутный тариф оплачивается при выходе — нужен сотрудник с правом оплаты": "Daqiqalik tarif chiqishda to'lanadi — to'lov huquqi bor xodim kerak",

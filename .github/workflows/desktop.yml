@@ -1,4 +1,5 @@
-# Сборка установщика PlayPos для Windows. Готовый PlayPos-Setup-*.exe появляется в Releases репозитория.
+# Сборка установщика PlayPos для Windows. Готовый PlayPos-Setup-*.exe появляется в Releases репозитория,
+# latest.yml из последнего релиза — источник автообновлений для установленных программ.
 name: Desktop app (Windows)
 
 on:
@@ -23,6 +24,10 @@ jobs:
       - name: Install
         working-directory: desktop
         run: npm ci
+      # Каждая сборка — новая версия (1.3.N): по ней установленные программы понимают, что есть обновление
+      - name: Version
+        working-directory: desktop
+        run: npm version 1.3.${{ github.run_number }} --no-git-tag-version
       - name: Build installer
         working-directory: desktop
         env:
@@ -41,6 +46,9 @@ jobs:
         with:
           tag_name: desktop-build-${{ github.run_number }}
           name: PlayPos для Windows — сборка ${{ github.run_number }}
-          body: Установщик кассы PlayPos для Windows (касса + сервер + база на одном компьютере).
-          files: desktop/dist/*.exe
+          body: Установщик кассы PlayPos для Windows (касса + сервер + база на одном компьютере). Установленные программы обновятся сами через интернет (latest.yml).
+          files: |
+            desktop/dist/*.exe
+            desktop/dist/*.blockmap
+            desktop/dist/latest.yml
           make_latest: true

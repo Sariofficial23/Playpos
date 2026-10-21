@@ -776,6 +776,25 @@
     return list.length ? list.map(ui.layout === "list" ? row : card).join("") : `<div class="empty" style="grid-column:1/-1">${ui.cat === "all" ? "Сейчас на площадке никого нет. Нажмите «Новое посещение»." : "В этой категории сейчас никого нет."}</div>`;
   }
 
+  /* ---------- Обновления программы (версия для Windows) ---------- */
+  function updateBanner() {
+    const u = ui.update;
+    if (!u || u.state !== "ready") return "";
+    return `<div class="banner" style="background:#f1efff;color:#3a2d9c">🆕 Загружена новая версия PlayPos ${esc(u.version)}. Обновление займёт около минуты, дети на площадке, таймеры и счета сохранятся.<button class="btn sm" data-upd>Обновить сейчас</button></div>`;
+  }
+  function updateText(u) {
+    if (!u) return "";
+    return ({ dev: "Режим разработки — обновления отключены", checking: "Проверяем обновления…", latest: "У вас последняя версия",
+      downloading: `Скачивается версия ${esc(u.version || "")}: ${u.percent || 0}%`, ready: `Версия ${esc(u.version || "")} загружена и готова к установке`,
+      error: "Не удалось проверить: нет интернета. Программа проверит позже сама", idle: "Проверка начнётся через минуту после запуска" })[u.state] || "";
+  }
+  async function installUpdate() {
+    if (!confirm(PPI18N.tr("Обновить PlayPos сейчас? Программа закроется примерно на минуту и откроется снова. Данные сохранятся."))) return;
+    toast("Сохраняем резервную копию и устанавливаем обновление…");
+    await window.PlayPosDesktop.installUpdate();
+  }
+  function mountUpdate() { document.querySelectorAll("[data-upd]").forEach((b) => (b.onclick = installUpdate)); }
+
   // Подписка программы (только в версии для Windows): предупреждение за 7 дней и после окончания
   function licenseBanner() {
     const l = S.license;
@@ -793,7 +812,7 @@
     const unpaid = S.bills.filter((b) => b.status === "open").reduce((a, b) => a + billTotal(b), 0);
     return shell("Площадка",
       `<button class="btn ghost sm" id="snd">${ui.soundCtx && S.settings.sound ? "🔔 Звук включён" : "🔕 Включить звук"}</button>${can("sell") ? `<button class="btn" id="nv">＋ Новое посещение</button>` : ""}`,
-      `${licenseBanner()}${!myShift() && can("shift") ? `<div class="banner">Смена не открыта — оплату принять нельзя.<button class="btn sm" id="os">Открыть смену</button></div>` : ""}
+      `${licenseBanner()}${updateBanner()}${!myShift() && can("shift") ? `<div class="banner">Смена не открыта — оплату принять нельзя.<button class="btn sm" id="os">Открыть смену</button></div>` : ""}
       <div class="stats">
         <div class="stat"><small>Детей на площадке</small><b>${active.length}</b></div>
         <div class="stat"><small>Просрочено</small><b style="color:${over ? "var(--danger)" : "inherit"}">${over}</b></div>
@@ -808,6 +827,7 @@
 
   function mountFloor() {
     const nv = $("#nv"); if (nv) nv.onclick = newVisitDialog;
+    mountUpdate();
     const os = $("#os"); if (os) os.onclick = openShiftDialog;
     $("#snd").onclick = () => {
       try { ui.soundCtx = ui.soundCtx || new (window.AudioContext || window.webkitAudioContext)(); ui.soundCtx.resume(); } catch (e) {}
@@ -1037,7 +1057,11 @@
         <div class="row"><button class="btn sm ghost" id="prRefresh">↻ Обновить</button><button class="btn sm ghost" id="prWin">Настройки принтеров Windows</button></div></div>
         <p class="note">Выберите принтер для чеков и нажмите «Тестовый чек». Состояние обновляется само каждые 10 секунд. Новый принтер: подключите его, установите драйвер (бумага 80 мм, поля 0) и нажмите «Обновить».</p>
         <div class="tbl"><table><thead><tr><th>Чеки</th><th>Принтер</th><th>Состояние</th><th></th></tr></thead><tbody id="prList">${printerRows()}</tbody></table></div></div>` : "";
-    return shell("Настройки", "", `${printersPanel}<div class="grid2">
+    const updatePanel = desktop() && window.PlayPosDesktop.updateState ? `<div class="panel"><div class="row" style="justify-content:space-between"><h2 style="margin:0">Обновления</h2>
+        <div class="row"><button class="btn sm ghost" id="updCheck">↻ Проверить обновления</button>${ui.update && ui.update.state === "ready" ? `<button class="btn sm" data-upd>Обновить сейчас</button>` : ""}</div></div>
+        <p>Версия программы: <b>${esc((ui.update && ui.update.current) || "")}</b> · <span id="updText">${updateText(ui.update)}</span></p>
+        <p class="note">Когда компьютер подключён к интернету, PlayPos сам проверяет обновления каждые 4 часа и скачивает их в фоне. Установка — по кнопке «Обновить сейчас» или автоматически при закрытии программы.</p></div>` : "";
+    return shell("Настройки", "", `${printersPanel}${updatePanel}<div class="grid2">
       <div class="panel"><h2>Площадка</h2>
         <label style="display:block;font-weight:800;margin:6px 0">Название (печатается на талоне)</label><input class="input" id="stV" value="${esc(st.venue)}" style="width:100%">
         <label style="display:block;font-weight:800;margin:14px 0 6px">Ширина бумаги принтера</label>
@@ -1060,6 +1084,8 @@
   }
   function mountSettings() {
     let paper = S.settings.paper, mode = S.settings.printMode || "windows";
+    mountUpdate();
+    const uc = $("#updCheck"); if (uc) uc.onclick = async () => { uc.disabled = true; ui.update = await window.PlayPosDesktop.checkUpdate(); render(); };
     if (desktop()) {
       loadPrinters();
       $("#prRefresh").onclick = () => { ui.printers = null; $("#prList").innerHTML = printerRows(); loadPrinters(); };
@@ -1178,6 +1204,16 @@
     } catch (e) {}
   }
   setInterval(poll, 5000);
+  // Состояние обновления приходит из приложения; баннер появляется, когда новая версия скачана
+  if (desktop() && window.PlayPosDesktop.onUpdate) {
+    window.PlayPosDesktop.updateState().then((u) => { ui.update = u; }).catch(() => {});
+    window.PlayPosDesktop.onUpdate((u) => {
+      const was = ui.update && ui.update.state;
+      ui.update = u;
+      const t = $("#updText"); if (t) t.innerHTML = updateText(u);
+      if (u.state !== was && (u.state === "ready" || ui.route === "settings") && S && me()) render();
+    });
+  }
   // Состояние принтера: в настройках каждые 10 секунд, в остальное время — раз в 30 секунд
   let prTick = 0;
   setInterval(() => { prTick++; if (S && desktop() && (ui.route === "settings" || prTick % 3 === 0)) loadPrinters(); }, 10000);
