@@ -48,6 +48,10 @@
     "Обновить PlayPos сейчас? Программа закроется примерно на минуту и откроется снова. Данные сохранятся.": "PlayPos hozir yangilansinmi? Dastur taxminan bir daqiqaga yopiladi va qayta ochiladi. Ma'lumotlar saqlanadi.",
     "Сохраняем резервную копию и устанавливаем обновление…": "Zaxira nusxa saqlanmoqda va yangilanish o'rnatilmoqda…",
     "Когда компьютер подключён к интернету, PlayPos сам проверяет обновления каждые 4 часа и скачивает их в фоне. Установка — по кнопке «Обновить сейчас» или автоматически при закрытии программы.": "Kompyuter internetga ulanganda PlayPos har 4 soatda yangilanishlarni o'zi tekshiradi va fonda yuklab oladi. O'rnatish — «Hozir yangilash» tugmasi orqali yoki dastur yopilganda avtomatik.",
+    // Сотрудник в настройках
+    "Сотрудник": "Xodim", "Выйти из кассы": "Kassadan chiqish", "🌐 Сайт PlayPos": "🌐 PlayPos sayti", "смена №": "smena №", "смена не открыта": "smena ochilmagan", "открыта в": "ochilgan:",
+    "Выход нужен при смене кассира: следующий сотрудник входит своим логином. Дети на площадке и таймеры при этом не останавливаются.": "Chiqish kassir almashganda kerak: keyingi xodim o'z logini bilan kiradi. Maydonchadagi bolalar va taymerlar to'xtamaydi.",
+    "Выйти из кассы? Чтобы продолжить работу, нужно будет снова ввести логин и пароль.": "Kassadan chiqilsinmi? Ishni davom ettirish uchun login va parolni qayta kiritish kerak bo'ladi.",
     // Время вышло → таймер стоит до решения кассира
     "▶ Продолжить": "▶ Davom ettirish", "Продолжает по минутам": "Daqiqalab davom etmoqda", "Продолжает": "Davom etmoqda", "Время вышло — таймер остановлен": "Vaqt tugadi — taymer to'xtatildi",
     "Время вышло · ждёт решения": "Vaqt tugadi · qaror kutilmoqda", "Таймер остановлен": "Taymer to'xtatildi", "Позже": "Keyinroq", "Выход и оплата": "Chiqish va to'lov", "⏩ Продлить тарифом": "⏩ Tarif bilan uzaytirish",

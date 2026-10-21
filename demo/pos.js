@@ -42,7 +42,7 @@
     ["reports", "📊", "Отчёты", "reports"],
     ["tariffs", "🎟️", "Тарифы", "tariffs"],
     ["staff", "👥", "Сотрудники", "staff"],
-    ["settings", "⚙️", "Настройки", "settings"],
+    ["settings", "⚙️", "Настройки"], // видны всем: «Выйти» теперь здесь; настройки площадки — только с правом
   ];
 
   /* Готовые наборы тарифов — типичные схемы игровых площадок */
@@ -828,10 +828,10 @@
     const u = me(), sh = myShift();
     return `<div class="layout">
       <aside class="side" id="side">
-        <a class="logo" href="index.html">${logoMark()}<span>Play<b>Pos</b></span></a>
+        <div class="logo">${logoMark()}<span>Play<b>Pos</b></span></div>
         ${NAV.filter((n) => !n[3] || can(n[3])).map((n) => `<a class="nav ${ui.route === n[0] ? "on" : ""}" href="#${n[0]}"><span class="em">${n[1]}</span>${n[2]}</a>`).join("")}
-        <div class="who">${printerChip()}<b>${esc(u.name)}</b>${ROLES[u.role].name}<br>${sh ? `Смена №${sh.no}, открыта в ${hm(sh.openedAt)}` : "Смена не открыта"}
-          <div class="row" style="margin-top:8px"><button class="btn sm ghost" id="logout">Выйти</button>${PPI18N.switcher()}</div></div>
+        <div class="who"><b>${esc(u.name)}</b>${ROLES[u.role].name}<br>${sh ? `Смена №${sh.no}, открыта в ${hm(sh.openedAt)}` : "Смена не открыта"}
+          <div class="row" style="margin-top:8px">${PPI18N.switcher()}</div></div>
       </aside>
       <main class="main">
         <div class="top"><button class="btn sm ghost menu-btn" id="menu">☰</button><h1>${title}</h1>${actions}</div>
@@ -1178,7 +1178,18 @@
     document.querySelectorAll("[data-act]").forEach((c) => (c.onchange = () => act("staff.active", { id: c.dataset.act, active: c.checked }, "Сохранено")));
   }
 
+  // Сотрудник: кто вошёл, принтер, выход из кассы и сайт PlayPos — видно всем, у кого нет права на настройки площадки
+  function accountPanel() {
+    const u = me(), sh = myShift();
+    return `<div class="panel"><div class="row" style="justify-content:space-between;flex-wrap:wrap;gap:10px"><h2 style="margin:0">Сотрудник</h2>${printerChip()}</div>
+      <p><b>${esc(u.name)}</b> · ${ROLES[u.role].name} · ${sh ? `смена №${sh.no}, открыта в ${hm(sh.openedAt)}` : "смена не открыта"}</p>
+      <div class="row" style="flex-wrap:wrap;gap:8px"><button class="btn ghost" id="logout">Выйти из кассы</button>
+        <a class="btn ghost" href="https://playpos-dusky.vercel.app/" target="_blank" rel="noopener">🌐 Сайт PlayPos</a></div>
+      <p class="note">Выход нужен при смене кассира: следующий сотрудник входит своим логином. Дети на площадке и таймеры при этом не останавливаются.</p></div>`;
+  }
+
   function viewSettings() {
+    if (!can("settings")) return shell("Настройки", "", accountPanel());
     let pal = "jungle"; try { pal = localStorage.getItem(PALETTE) || pal; } catch (e) {}
     const st = S.settings;
     const printersPanel = desktop() ? `<div class="panel"><div class="row" style="justify-content:space-between"><h2 style="margin:0">Принтеры</h2>
@@ -1189,7 +1200,7 @@
         <div class="row"><button class="btn sm ghost" id="updCheck">↻ Проверить обновления</button>${ui.update && ui.update.state === "ready" ? `<button class="btn sm" data-upd>Обновить сейчас</button>` : ""}</div></div>
         <p>Версия программы: <b>${esc((ui.update && ui.update.current) || "")}</b> · <span id="updText">${updateText(ui.update)}</span></p>
         <p class="note">Когда компьютер подключён к интернету, PlayPos сам проверяет обновления каждые 4 часа и скачивает их в фоне. Установка — по кнопке «Обновить сейчас» или автоматически при закрытии программы.</p></div>` : "";
-    return shell("Настройки", "", `${printersPanel}${updatePanel}<div class="grid2">
+    return shell("Настройки", "", `${accountPanel()}${printersPanel}${updatePanel}<div class="grid2">
       <div class="panel"><h2>Площадка</h2>
         <label style="display:block;font-weight:800;margin:6px 0">Название (печатается на талоне)</label><input class="input" id="stV" value="${esc(st.venue)}" style="width:100%">
         <label style="display:block;font-weight:800;margin:14px 0 6px">Ширина бумаги принтера</label>
@@ -1213,6 +1224,12 @@
         <p class="note" style="margin-top:20px">Название площадки и время предупреждения общие для всех касс. Принтер, бумага и печать чека настраиваются на каждом компьютере отдельно.</p></div></div>`);
   }
   function mountSettings() {
+    $("#logout").onclick = async () => {
+      if (!confirm(PPI18N.tr("Выйти из кассы? Чтобы продолжить работу, нужно будет снова ввести логин и пароль."))) return;
+      try { await api("logout"); } catch (e) {} S = null; close(); render();
+    };
+    if (desktop()) loadPrinters();
+    if (!can("settings")) return;
     let paper = S.settings.paper, mode = S.settings.printMode || "windows";
     mountUpdate();
     const uc = $("#updCheck"); if (uc) uc.onclick = async () => { uc.disabled = true; ui.update = await window.PlayPosDesktop.checkUpdate(); render(); };
@@ -1273,7 +1290,6 @@
     const [view, mount] = VIEWS[ui.route];
     $("#root").innerHTML = view();
     mount();
-    $("#logout").onclick = async () => { try { await api("logout"); } catch (e) {} S = null; close(); render(); };
     $("#menu").onclick = () => $("#side").classList.toggle("open");
     ui.sig = floorSig();
   }
