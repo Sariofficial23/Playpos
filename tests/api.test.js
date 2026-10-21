@@ -81,13 +81,22 @@ test("PlayPos API", { skip }, async (t) => {
     assert.ok(s2.visits.find((x) => x.id === v.visitId).exitAt);
   });
 
-  await t.test("просрочка: доплата за каждую начатую минуту добавляется при выходе сама", async () => {
+  await t.test("просрочка: таймер стоит до «Продолжить», потом доплата за каждую начатую минуту", async () => {
     const s0 = (await call(handler, owner, { op: "state" })).data;
     assert.ok(s0.tariffs.some((x) => x.perMinute && x.name === "По факту (поминутно)")); // поминутный тариф есть сразу
     assert.equal((await call(handler, owner, { op: "settings.save", venue: "A", warn: 5, overRate: 500 })).status, 200);
     const v = (await call(handler, owner, { op: "visit.create", child: "Сара", tariffId: tariff10.id })).data;
     await call(handler, owner, { op: "visit.checkout", visitId: v.visitId, exit: false, method: "cash" }); // оплатили 10 минут
+    // время ещё не вышло — «Продолжить» нельзя
+    assert.equal((await call(handler, owner, { op: "visit.continue", visitId: v.visitId })).status, 409);
     await sql`update visits set start_at = now() - interval '22 minutes', end_at = now() - interval '11 minutes 30 seconds' where id = ${v.visitId}`;
+    // кассир ещё не нажал «Продолжить» — таймер стоит, доплаты нет
+    const none = await call(handler, owner, { op: "visit.checkout", visitId: v.visitId, exit: false, method: "cash" });
+    assert.deepEqual(none.data.paid, []);
+    assert.equal((await call(handler, owner, { op: "visit.continue", visitId: v.visitId })).status, 200);
+    assert.equal((await call(handler, owner, { op: "visit.extend", visitId: v.visitId, tariffId: tariff10.id, from: "now" })).status, 409);
+    // «Продолжить» нажали 11,5 минут назад — доплата за 12 минут
+    await sql`update visits set over_from = now() - interval '11 minutes 30 seconds' where id = ${v.visitId}`;
     const out = await call(handler, owner, { op: "visit.checkout", visitId: v.visitId, exit: true, method: "card" });
     assert.equal(out.status, 200);
     const s2 = (await call(handler, owner, { op: "state" })).data;

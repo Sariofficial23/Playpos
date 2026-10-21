@@ -249,3 +249,6 @@ tfoot td { border-top: 2px solid var(--line); border-bottom: 0; }
 .lrow .pd.vip, .chip.vip { background: #6c5ce7; color: #fff; }
 .vipsum { color: #4b3cc4; font-weight: 900; }
 .vipcost { align-self: center; padding: 6px 12px; border-radius: 10px; background: #f1efff; color: #3a2d9c; font-weight: 900; font-size: 15px; white-space: nowrap; font-variant-numeric: tabular-nums; }
+/* Время вышло, кассир нажал «Продолжить»: спокойная строка без мигания, доплата растёт */
+.lrow.bad.going, .card.bad.going { animation: none; }
+.vipcost.over { background: var(--danger-bg); color: #8d1422; }

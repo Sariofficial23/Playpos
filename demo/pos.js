@@ -130,7 +130,30 @@
   const isOpenRate = (v) => v.rate != null && !v.exitAt;
   const openMins = (v) => Math.max(1, Math.ceil((now() - v.start) / MIN));
   const openDue = (v) => openMins(v) * v.rate;
-  const timerText = (v) => (isOpenRate(v) ? clock(now() - v.start) : (status(v) === "bad" ? "+" : "") + clock(v.end - now()));
+  const timerText = (v) => (isOpenRate(v) ? clock(now() - v.start)
+    : status(v) !== "bad" ? clock(v.end - now()) : v.overFrom ? "+" + clock(Math.max(0, now() - overStart(v))) : "⏸ 00:00");
+  // «Продолжить» доступно, когда время вышло, решение не принято и задана цена минуты
+  const canContinue = (v) => waiting(v) && can("extend") && overRate() > 0;
+  const continueVisit = async (v) => {
+    if (await act("visit.continue", { visitId: v.id })) toast(`▶ ${esc(v.child)}: ${PPI18N.tr("продолжает, доплата")} ${money(overRate())} ${PPI18N.tr("за минуту")}`);
+  };
+  // Время вышло: таймер остановлен, спрашиваем кассира, что дальше
+  function expiryDialog(v) {
+    const rate = overRate();
+    modal(`<div class="dlg">
+      <h2>⏰ Время вышло — ${esc(v.child)}</h2>
+      <div class="summary">${esc(v.tariffName)} · ${hm(v.start)}–${hm(v.end)}<br><b>Таймер остановлен</b> — пока вы не нажмёте «Продолжить», время и доплата не считаются.</div>
+      <div class="foot" style="flex-wrap:wrap">
+        <button class="btn ghost" data-x>Позже</button>
+        ${can("finish") ? `<button class="btn alt" id="exOut">Выход и оплата</button>` : ""}
+        ${can("extend") ? `<button class="btn alt" id="exExt">⏩ Продлить тарифом</button>` : ""}
+        ${canContinue(v) ? `<button class="btn" id="exCont">▶ Продолжить (${money(rate)}/мин)</button>` : ""}
+      </div></div>`, (m) => {
+      $("[data-x]", m).onclick = close;
+      const on = (id, f) => { const b = $(id, m); if (b) b.onclick = () => { close(); f(v); }; };
+      on("#exOut", finishDialog); on("#exExt", extendDialog); on("#exCont", continueVisit);
+    });
+  }
   // Просрочка: каждая начатая минута после окончания по цене из настроек (по умолчанию — как в поминутном тарифе)
   const overRate = () => {
     const o = S.settings.overRate;
@@ -138,7 +161,10 @@
     const pm = S.tariffs.filter((t) => t.perMinute && !t.archived).map((t) => t.price);
     return pm.length ? Math.min(...pm) : 0;
   };
-  const overMins = (v) => (v.rate == null && !v.exitAt && now() > v.end ? Math.ceil((now() - v.end) / MIN) : 0);
+  // Доплата идёт только после «Продолжить» (overFrom); до решения кассира таймер стоит на 00:00
+  const overStart = (v) => Math.max(v.end, v.overFrom || 0);
+  const overMins = (v) => (v.rate == null && !v.exitAt && v.overFrom && now() > overStart(v) ? Math.ceil((now() - overStart(v)) / MIN) : 0);
+  const waiting = (v) => v.rate == null && !v.exitAt && !v.overFrom && now() >= v.end; // время вышло, кассир ещё не решил
   const overDue = (v) => overMins(v) * overRate();
   const tariffPrice = (t) => (t.perMinute ? money(t.price) + "/мин" : money(t.price));
   function status(v) {
@@ -248,6 +274,7 @@
   function extendDialog(v) {
     if (!can("extend")) return toast("Нет права на продление", "bad");
     if (isOpenRate(v)) return toast("Поминутный тариф продлевать не нужно — сумма считается при выходе", "warn");
+    if (v.overFrom) return toast("Ребёнок уже продолжает по минутам — доплата посчитается в счёте", "warn");
     const tariffs = activeTariffs("ext");
     if (!tariffs.length) return toast("Нет тарифов для продления", "warn");
     let sel = tariffs[0].id, from = "prev";
@@ -395,13 +422,13 @@
       <button class="xbtn" data-x aria-label="Закрыть">×</button>
       <h2>${exit ? "Выход ребёнка" : "Закрыть счёт"}</h2>
       <div class="sub">${esc(v.child)} · ${hm(v.start)}–${hm(v.end)} · на площадке ${clock(t - v.start)}</div>
-      ${over ? `<div class="banner" style="margin:12px 0 0">${rate ? `Время вышло ${clock(over)} назад — доплата за просрочку считается сама, ${money(rate)} за минуту.` : `Время вышло ${clock(over)} назад. Если нужна доплата — нажмите «Продлить».`}</div>` : ""}
-      <div class="lines">${bills.map(billLines).join("")}${over && rate ? `<div class="ln"><span id="ovT"></span><span id="ovA"></span></div>` : ""}</div>
+      ${over ? `<div class="banner" style="margin:12px 0 0">${v.overFrom ? `Ребёнок продолжает с ${hm(v.overFrom)} — доплата ${money(rate)} за минуту считается сама.` : `Время вышло, таймер остановлен — доплата не начисляется.`}</div>` : ""}
+      <div class="lines">${bills.map(billLines).join("")}${v.overFrom && rate ? `<div class="ln"><span id="ovT"></span><span id="ovA"></span></div>` : ""}</div>
       ${paidSum && due ? `<div class="ln muted"><span>Уже оплачено</span><span>${money(paidSum)}</span></div>` : ""}
       <div class="tot"><span>${due ? "К оплате" : "Всё оплачено"}</span><b id="coTot">${money(due || paidSum)}</b></div>
       ${due ? payButtons() : ""}
       <div class="row" style="margin-top:16px">
-        ${over && !rate && can("extend") ? `<button class="btn alt" id="coExt">⏩ Продлить</button>` : ""}
+        ${over && !v.overFrom && can("extend") ? `<button class="btn alt" id="coExt">⏩ Продлить</button>` : ""}
         <button class="btn big" id="coOk" style="flex:1">${due ? (exit ? "Подтвердить оплату и выход" : "Подтвердить оплату") : "Отметить выход"}</button>
       </div>
     </div>`, (m) => {
@@ -815,14 +842,16 @@
   function card(v) {
     const st = status(v), vip = st === "vip";
     const paid = openBills(v).length === 0 && !overDue(v);
-    const label = { ok: "Играет", warn: "Скоро заканчивается", bad: "Время вышло — позовите ребёнка", vip: "Поминутно" }[st];
-    return `<div class="card ${st}" data-v="${v.id}">
+    const label = { ok: "Играет", warn: "Скоро заканчивается", bad: v.overFrom ? "Продолжает по минутам" : "Время вышло — таймер остановлен", vip: "Поминутно" }[st];
+    const cont = canContinue(v), going = !!v.overFrom && !v.exitAt;
+    return `<div class="card ${st}${going ? " going" : ""}" data-v="${v.id}">
       <div class="head"><h3>${esc(v.child)}</h3>${vip ? `<span class="chip vip">при выходе</span>` : `<span class="chip ${paid ? "paid" : "open"}">${paid ? "✓ оплачен" : "● не оплачен"}</span>`}</div>
       <div class="time" data-t="${v.id}">${timerText(v)}</div>
-      <div class="st">${label}${vip ? ` · <span class="vipsum" data-s="${v.id}">${money(openDue(v))}</span>` : ""}</div>
+      <div class="st">${label}${vip ? ` · <span class="vipsum" data-s="${v.id}">${money(openDue(v))}</span>` : going ? ` · <span class="vipsum" data-s="${v.id}">${money(overDue(v))}</span>` : ""}</div>
       <div class="meta">${vip ? `вход ${hm(v.start)} · ${esc(v.tariffName)} · ${money(v.rate)}/мин` : `${hm(v.start)} → ${hm(v.end)} · ${esc(v.tariffName)}${v.ext.length ? ` · продлений: ${v.ext.length}` : ""}`}</div>
       <div class="acts">
-        ${can("extend") && !vip ? `<button class="btn sm extend wide" data-a="extend">⏩ Продлить</button>` : ""}
+        ${cont ? `<button class="btn sm wide" data-a="cont">▶ Продолжить</button>` : ""}
+        ${can("extend") && !vip && !going ? `<button class="btn sm extend wide" data-a="extend">⏩ Продлить</button>` : ""}
         ${can("finish") ? `<button class="btn sm" data-a="finish">Завершить</button>` : ""}
         ${can("pay") && !paid ? `<button class="btn sm sun" data-a="bill">Счёт</button>` : ""}
         ${can("print") ? `<button class="btn sm ghost" data-a="print">Талон</button>` : ""}
@@ -845,16 +874,19 @@
   function row(v) {
     const st = status(v), vip = st === "vip", paid = openBills(v).length === 0 && !overDue(v);
     const hide = 'style="visibility:hidden" tabindex="-1"';
-    return `<div class="lrow ${st}" data-v="${v.id}">
+    const cont = canContinue(v), going = !!v.overFrom && !v.exitAt;
+    return `<div class="lrow ${st}${going ? " going" : ""}" data-v="${v.id}">
       <span class="dot"></span>
-      <div class="nm"><b>${esc(v.child)}</b><small><span class="cl">${CATS.find((c) => c[0] === st)[1]}</span> · ${vip
+      <div class="nm"><b>${esc(v.child)}</b><small><span class="cl">${going ? "Продолжает" : waiting(v) ? "Время вышло · ждёт решения" : CATS.find((c) => c[0] === st)[1]}</span> · ${vip
         ? `${hm(v.start)} → · ${esc(v.tariffName)} · ${money(v.rate)}/мин`
         : `${hm(v.start)}–${hm(v.end)} · ${esc(v.tariffName)}${v.ext.length ? " · +" + v.ext.length : ""}`}</small></div>
       <div class="tm" data-t="${v.id}">${timerText(v)}</div>
       ${vip ? `<span class="pd vip" title="Оплата при выходе">⏱</span>` : `<span class="pd ${paid ? "paid" : "open"}" title="${paid ? "Оплачен" : "Не оплачен"}">${paid ? "✓" : "!"}</span>`}
       <div class="ra">
         ${vip ? `<span class="vipcost" title="Сумма на сейчас" data-s="${v.id}">${money(openDue(v))}</span>` : `
-        ${can("extend") ? `<button class="btn sm extend" data-a="extend">⏩ Продлить</button>` : ""}
+        ${going ? `<span class="vipcost over" title="Доплата на сейчас" data-s="${v.id}">${money(overDue(v))}</span>`
+          : cont ? `<button class="btn sm" data-a="cont">▶ Продолжить</button>`
+          : can("extend") ? `<button class="btn sm extend" data-a="extend">⏩ Продлить</button>` : ""}
         ${can("pay") ? `<button class="btn sm sun" data-a="bill" ${paid ? hide : ""}>Счёт</button>` : ""}`}
         ${can("finish") ? `<button class="btn sm" data-a="finish">Выход</button>` : ""}
         ${can("print") ? `<button class="btn sm ghost" data-a="print" title="Талон">🖨</button>` : ""}
@@ -939,7 +971,7 @@
     $("#grid").onclick = (e) => {
       const b = e.target.closest("[data-a]"); if (!b) return;
       const v = S.visits.find((x) => x.id === b.closest("[data-v]").dataset.v);
-      ({ extend: extendDialog, finish: finishDialog, bill: (v) => checkoutPanel(v, false), print: printTicket })[b.dataset.a](v);
+      ({ extend: extendDialog, cont: continueVisit, finish: finishDialog, bill: (v) => checkoutPanel(v, false), print: printTicket })[b.dataset.a](v);
     };
   }
 
@@ -1251,7 +1283,7 @@
     if (persist) try { localStorage.setItem(PALETTE, p); } catch (e) {}
   }
 
-  const floorSig = () => S.visits.filter((v) => !v.exitAt).map((v) => v.id + status(v) + openBills(v).length).join("|");
+  const floorSig = () => S.visits.filter((v) => !v.exitAt).map((v) => v.id + status(v) + openBills(v).length + (v.overFrom ? "c" : "")).join("|");
 
   /* Таймер: каждую секунду пересчитываем остаток от сохранённого времени окончания */
   function tick() {
@@ -1265,7 +1297,10 @@
       if (st === "bad" && !ui.notified[v.id + "e"]) {
         ui.notified[v.id + "e"] = 1; ui.notified[v.id + "w"] = 1;
         beep();
-        toast(`⏰ ${esc(v.child)}: время вышло`, "bad", can("extend") ? "Продлить" : null, () => extendDialog(v));
+        if (v.overFrom) return;
+        // Таймер остановлен — спрашиваем кассира (если открыто другое окно — напоминание с кнопкой)
+        if ($("#modal").hidden) expiryDialog(v);
+        else toast(`⏰ ${esc(v.child)}: время вышло, таймер остановлен`, "bad", canContinue(v) ? "▶ Продолжить" : can("extend") ? "Продлить" : null, () => (canContinue(v) ? continueVisit(v) : extendDialog(v)));
       }
     });
     if (ui.route !== "floor" || !$("#grid")) return;
@@ -1277,6 +1312,7 @@
     $("#grid").querySelectorAll("[data-s]").forEach((el) => {
       const v = S.visits.find((x) => x.id === el.dataset.s);
       if (v && isOpenRate(v)) el.textContent = money(openDue(v));
+      else if (v && v.overFrom) el.textContent = money(overDue(v));
     });
   }
 

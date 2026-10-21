@@ -48,6 +48,15 @@
     "Обновить PlayPos сейчас? Программа закроется примерно на минуту и откроется снова. Данные сохранятся.": "PlayPos hozir yangilansinmi? Dastur taxminan bir daqiqaga yopiladi va qayta ochiladi. Ma'lumotlar saqlanadi.",
     "Сохраняем резервную копию и устанавливаем обновление…": "Zaxira nusxa saqlanmoqda va yangilanish o'rnatilmoqda…",
     "Когда компьютер подключён к интернету, PlayPos сам проверяет обновления каждые 4 часа и скачивает их в фоне. Установка — по кнопке «Обновить сейчас» или автоматически при закрытии программы.": "Kompyuter internetga ulanganda PlayPos har 4 soatda yangilanishlarni o'zi tekshiradi va fonda yuklab oladi. O'rnatish — «Hozir yangilash» tugmasi orqali yoki dastur yopilganda avtomatik.",
+    // Время вышло → таймер стоит до решения кассира
+    "▶ Продолжить": "▶ Davom ettirish", "Продолжает по минутам": "Daqiqalab davom etmoqda", "Продолжает": "Davom etmoqda", "Время вышло — таймер остановлен": "Vaqt tugadi — taymer to'xtatildi",
+    "Время вышло · ждёт решения": "Vaqt tugadi · qaror kutilmoqda", "Таймер остановлен": "Taymer to'xtatildi", "Позже": "Keyinroq", "Выход и оплата": "Chiqish va to'lov", "⏩ Продлить тарифом": "⏩ Tarif bilan uzaytirish",
+    "— пока вы не нажмёте «Продолжить», время и доплата не считаются.": "— «Davom ettirish» bosilmaguncha vaqt va qo'shimcha to'lov hisoblanmaydi.",
+    "Время вышло, таймер остановлен — доплата не начисляется.": "Vaqt tugadi, taymer to'xtatildi — qo'shimcha to'lov hisoblanmaydi.", "продолжает, доплата": "davom etmoqda, qo'shimcha to'lov",
+    "Ребёнок уже продолжает по минутам — доплата посчитается в счёте": "Bola daqiqalab davom etmoqda — qo'shimcha to'lov hisobda hisoblanadi",
+    "Ребёнок уже продолжает по минутам — сначала закройте счёт": "Bola daqiqalab davom etmoqda — avval hisobni yoping", "Время ещё не вышло": "Vaqt hali tugamadi",
+    "Не задана цена минуты просрочки — укажите её в «Настройках» или используйте «Продлить»": "Kechikish daqiqasi narxi belgilanmagan — «Sozlamalar»da kiriting yoki «Uzaytirish»dan foydalaning",
+    "время вышло, таймер остановлен": "vaqt tugadi, taymer to'xtatildi", "Время вышло —": "Vaqt tugadi —",
     // Скидки и оплата частями
     "Скидки и изменение оплаты": "Chegirmalar va to'lovni o'zgartirish", "Скидка при оплате; исправить способ оплаты уже оплаченного счёта": "To'lovda chegirma; to'langan hisobning to'lov usulini tuzatish",
     "Наличные + карта": "Naqd + karta", "наличные + карта": "naqd + karta", "Наличными": "Naqd pulda", "Картой": "Karta orqali", "Скидка, сум": "Chegirma, so'm", "Без скидки": "Chegirmasiz",
