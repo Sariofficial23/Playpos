@@ -4,63 +4,65 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>PlayPos — касса и таймеры для детской площадки</title>
-<meta name="description" content="PlayPos: таймеры посещений, продления, счета, смены, сотрудники с правами доступа и отчёты для детских игровых площадок.">
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Nunito:wght@500;700;800;900&display=swap" rel="stylesheet">
+<meta name="description" content="PlayPos: программа для детских игровых площадок. Таймер на каждого ребёнка, продление в один клик, оплата наличными и картой, печать чека, сотрудники и отчёты. Работает без интернета.">
+<link rel="stylesheet" href="fonts/nunito.css">
 <link rel="stylesheet" href="theme.css">
 <script src="i18n.js"></script>
 <style>
-  .wrap { max-width: 1120px; margin: 0 auto; padding: 0 20px; }
-  header { padding: 18px 0; }
-  header .wrap { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
-  nav a { margin-left: 18px; font-weight: 700; color: var(--ink); text-decoration: none; }
-  .hero { padding: 40px 0 70px; position: relative; overflow: hidden; }
-  .hero .wrap { display: grid; grid-template-columns: 1.05fr 1fr; gap: 40px; align-items: center; }
+  html { scroll-behavior: smooth; }
+  .wrap { max-width: 1140px; margin: 0 auto; padding: 0 20px; }
+  header { padding: 14px 0; position: sticky; top: 0; z-index: 10; background: color-mix(in srgb, var(--bg) 92%, transparent); backdrop-filter: blur(8px); border-bottom: 1px solid var(--line); }
+  header .wrap { display: flex; align-items: center; gap: 14px; }
+  nav { display: flex; align-items: center; gap: 18px; margin-left: auto; }
+  nav a.l { font-weight: 700; color: var(--ink); text-decoration: none; }
+  .hero { padding: 54px 0 70px; position: relative; overflow: hidden; }
+  .hero .wrap { display: grid; grid-template-columns: 1fr 1.1fr; gap: 44px; align-items: center; }
   .tag { display: inline-block; background: var(--soft); color: var(--brand-ink); font-weight: 800; padding: 6px 12px; border-radius: 99px; font-size: 13px; }
   h1 { font-size: clamp(34px, 5vw, 56px); line-height: 1.05; margin: 16px 0; letter-spacing: -1.5px; }
-  h1 em { font-style: normal; color: var(--brand); position: relative; }
-  h1 em::after { content: ""; position: absolute; left: 0; right: 0; bottom: 4px; height: 12px; background: var(--accent); z-index: -1; border-radius: 6px; }
-  .lead { font-size: 19px; color: var(--muted); line-height: 1.5; max-width: 520px; }
-  .cta { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 26px; }
-  .blob { position: absolute; border-radius: 50%; filter: blur(2px); opacity: .55; z-index: -1; }
-  .mock { background: var(--surface); border-radius: 26px; box-shadow: var(--shadow); padding: 18px; border: 2px solid var(--line); transform: rotate(1.2deg); }
-  .mock-top { display: flex; gap: 8px; margin-bottom: 14px; }
-  .mock-top span { flex: 1; background: var(--soft); border-radius: 12px; padding: 10px; font-weight: 800; font-size: 13px; }
-  .mock-top b { display: block; font-size: 22px; }
-  .mcards { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
-  .mc { border-radius: 16px; padding: 12px; border: 2px solid; }
-  .mc h4 { margin: 0 0 4px; }
-  .mc .t { font-size: 26px; font-weight: 900; }
-  .mc small { font-weight: 700; }
-  .mc.ok { background: var(--ok-bg); border-color: #b7e8c8; color: #0f5d2c; }
-  .mc.warn { background: var(--warn-bg); border-color: #f3dd8f; color: #7a5400; }
-  .mc.bad { background: var(--danger-bg); border-color: #f7b5bd; color: #8d1422; }
-  .mc button { margin-top: 8px; width: 100%; }
-  section.block { padding: 60px 0; }
+  h1 em { font-style: normal; color: var(--brand); }
+  .lead { font-size: 19px; color: var(--muted); line-height: 1.5; }
+  .cta { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 24px; }
+  .btn.xl { padding: 16px 22px; font-size: 17px; border-radius: 16px; }
+  .small { color: var(--muted); font-size: 14px; margin-top: 12px; }
+  .shot { width: 100%; border-radius: 18px; border: 2px solid var(--line); box-shadow: 0 24px 60px rgba(21, 50, 74, .18); display: block; }
+  .hero .shot { transform: rotate(1deg); }
+  .blob { position: absolute; border-radius: 50%; z-index: -1; }
+  section.block { padding: 64px 0; }
   section.block h2 { font-size: 36px; letter-spacing: -1px; margin: 0 0 10px; }
-  .grid3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; margin-top: 30px; }
+  .grid3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; margin-top: 28px; }
   .feat { background: var(--surface); border-radius: var(--radius); padding: 22px; box-shadow: var(--shadow); border: 2px solid var(--line); }
-  .feat .ic { width: 48px; height: 48px; border-radius: 14px; display: grid; place-items: center; font-size: 24px; margin-bottom: 12px; }
+  .feat .ic { width: 48px; height: 48px; border-radius: 14px; display: grid; place-items: center; font-size: 24px; margin-bottom: 12px; background: var(--soft); }
   .feat h3 { margin: 0 0 6px; }
   .feat p { margin: 0; color: var(--muted); line-height: 1.45; }
-  .band { background: var(--ink); color: #fff; border-radius: 30px; padding: 40px; display: grid; grid-template-columns: 1fr 1fr; gap: 30px; }
-  .band h2 { color: #fff; }
-  .band li { margin: 8px 0; line-height: 1.4; }
-  .price { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; margin-top: 30px; max-width: 760px; }
-  .plan { background: var(--surface); border: 3px solid var(--line); border-radius: 24px; padding: 26px; }
-  .plan.best { border-color: var(--brand); position: relative; }
-  .plan.best::before { content: "Выгоднее"; position: absolute; top: -14px; right: 20px; background: var(--accent); padding: 4px 12px; border-radius: 99px; font-weight: 900; font-size: 13px; }
-  .plan .sum { font-size: 34px; font-weight: 900; margin: 10px 0; }
-  footer { padding: 40px 0; color: var(--muted); }
+  .gallery { display: grid; grid-template-columns: 1fr 1fr; gap: 22px; margin-top: 28px; }
+  .gallery figure { margin: 0; }
+  .gallery figcaption { margin-top: 10px; font-weight: 800; }
+  .gallery figcaption span { display: block; font-weight: 500; color: var(--muted); }
+  .steps { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-top: 28px; counter-reset: s; }
+  .step { background: var(--surface); border: 2px solid var(--line); border-radius: var(--radius); padding: 20px; }
+  .step::before { counter-increment: s; content: counter(s); display: grid; place-items: center; width: 40px; height: 40px; border-radius: 12px; background: var(--brand); color: #fff; font-weight: 900; margin-bottom: 10px; }
+  .step h3 { margin: 0 0 6px; } .step p { margin: 0; color: var(--muted); line-height: 1.45; }
+  .band { background: var(--ink); color: #fff; border-radius: 30px; padding: 40px; display: grid; grid-template-columns: 1.2fr 1fr; gap: 30px; align-items: center; }
+  .band h2 { color: #fff; } .band p { opacity: .85; line-height: 1.5; } .band li { margin: 8px 0; }
+  details { background: var(--surface); border: 2px solid var(--line); border-radius: 16px; padding: 16px 18px; margin-top: 10px; }
+  summary { font-weight: 800; cursor: pointer; font-size: 17px; }
+  details p { color: var(--muted); line-height: 1.5; margin: 10px 0 0; }
+  .contact { display: grid; grid-template-columns: 1fr 1.1fr; gap: 28px; align-items: start; }
+  .card { background: var(--surface); border: 2px solid var(--line); border-radius: 24px; padding: 26px; box-shadow: var(--shadow); }
+  .card label { display: block; font-weight: 800; font-size: 14px; margin: 12px 0 6px; }
+  .input { border: 2px solid var(--line); background: var(--surface); border-radius: 12px; padding: 12px 14px; font: inherit; color: var(--ink); width: 100%; }
+  .input:focus { outline: none; border-color: var(--brand); }
+  .hp { position: absolute; left: -9999px; }
+  .phone { font-size: 28px; font-weight: 900; color: var(--ink); text-decoration: none; display: block; margin: 8px 0; }
+  #msg { font-weight: 800; margin-top: 12px; }
+  footer { padding: 36px 0; color: var(--muted); }
   footer .wrap { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 10px; }
-  .pal { display: inline-flex; gap: 6px; align-items: center; }
-  .pal button { width: 26px; height: 26px; border-radius: 50%; border: 3px solid #fff; box-shadow: 0 0 0 2px var(--line); }
-  @media (max-width: 860px) {
-    .hero .wrap, .band, .price { grid-template-columns: 1fr; }
-    .grid3 { grid-template-columns: 1fr; }
-    nav a.hide-m { display: none; }
-    .mock { transform: none; }
+  @media (max-width: 900px) {
+    .hero .wrap, .band, .contact, .gallery { grid-template-columns: 1fr; }
+    .grid3 { grid-template-columns: 1fr; } .steps { grid-template-columns: 1fr 1fr; }
+    nav a.l { display: none; } .hero .shot { transform: none; }
   }
+  @media (max-width: 520px) { .steps { grid-template-columns: 1fr; } header .btn.dl { display: none; } }
 </style>
 </head>
 <body>
@@ -68,56 +70,69 @@
   <div class="wrap">
     <a class="logo" href="#"><span class="logo-mark"><svg width="18" height="20" viewBox="0 0 18 20"><path d="M3 2.5c0-1.2 1.3-1.9 2.3-1.3l11 7.5c.9.6.9 2 0 2.6l-11 7.5C4.3 19.4 3 18.7 3 17.5z" fill="#fff"/></svg></span><span>Play<b>Pos</b></span></a>
     <nav>
-      <a class="hide-m" href="#features">Возможности</a>
-      <a class="hide-m" href="#pricing">Тарифы</a>
-      <a class="hide-m" href="brand.html">Бренд</a>
+      <a class="l" href="#features">Возможности</a>
+      <a class="l" href="#start">Как начать</a>
+      <a class="l" href="#faq">Вопросы</a>
+      <a class="l" href="#contact">Контакты</a>
       <span id="langsw"></span>
-      <a class="btn sm ghost" href="app.html">Открыть демо</a>
-      <a class="btn sm" href="pos">Войти в кассу</a>
+      <a class="btn sm dl" data-download href="#">⬇ Скачать</a>
     </nav>
   </div>
 </header>
 
 <section class="hero">
-  <div class="blob" style="width:340px;height:340px;background:var(--accent);right:-80px;top:-60px"></div>
-  <div class="blob" style="width:220px;height:220px;background:var(--brand-2);left:-90px;bottom:-40px;opacity:.25"></div>
+  <div class="blob" style="width:380px;height:380px;background:var(--accent);right:-120px;top:-80px;opacity:.6"></div>
+  <div class="blob" style="width:240px;height:240px;background:var(--brand-2);left:-110px;bottom:-60px;opacity:.2"></div>
   <div class="wrap">
     <div>
-      <span class="tag">Для детских игровых площадок</span>
+      <span class="tag">Программа для детских игровых площадок</span>
       <h1>Каждая минута игры <em>под контролем</em></h1>
-      <p class="lead">PlayPos запускает таймер на ребёнка, подсвечивает тех, у кого время заканчивается, продлевает в один клик и сам пересчитывает сумму. Касса, смены, сотрудники и отчёты — в одном окне.</p>
+      <p class="lead">PlayPos запускает таймер на каждого ребёнка, подсвечивает тех, у кого время заканчивается, продлевает в один клик и сам считает сумму. Касса, чеки, сотрудники и отчёты — в одной программе.</p>
       <div class="cta">
-        <a class="btn" href="app.html">Попробовать демо →</a>
-        <a class="btn ghost" href="#features">Что умеет</a>
+        <a class="btn xl" data-download href="#">⬇ Скачать для Windows</a>
+        <a class="btn xl ghost" href="#contact">Оставить заявку</a>
       </div>
+      <p class="small">Windows 10 / 11 · работает без интернета · русский и узбекский язык</p>
     </div>
-    <div class="mock" aria-hidden="true">
-      <div class="mock-top">
-        <span>На площадке<b>12</b></span>
-        <span>Просрочено<b style="color:var(--danger)">1</b></span>
-        <span>Выручка<b>840 000</b></span>
-      </div>
-      <div class="mcards">
-        <div class="mc bad"><h4>Амина</h4><div class="t">+04:12</div><small>Время вышло · не оплачен</small><button class="btn sm">Продлить</button></div>
-        <div class="mc warn"><h4>Юсуф</h4><div class="t">03:48</div><small>Осталось мало · оплачен</small><button class="btn sm">Продлить</button></div>
-        <div class="mc ok"><h4>Саша</h4><div class="t">1:38:10</div><small>Играет · оплачен</small></div>
-        <div class="mc ok"><h4>Лейла</h4><div class="t">14:02</div><small>Играет · счёт открыт</small></div>
-      </div>
-    </div>
+    <img class="shot" src="img/floor.png" alt="Экран «Площадка»: список детей с таймерами и кнопками" loading="eager">
   </div>
 </section>
 
 <section class="block" id="features">
   <div class="wrap">
-    <h2>Всё, что нужно кассиру и владельцу</h2>
-    <p class="lead">Простые большие кнопки для планшета и подробные отчёты для владельца.</p>
+    <h2>Что умеет PlayPos</h2>
+    <p class="lead">Простые большие кнопки для кассира и подробные отчёты для владельца.</p>
     <div class="grid3">
-      <div class="feat"><div class="ic" style="background:var(--ok-bg)">⏱️</div><h3>Таймеры с цветами</h3><p>Зелёный — играет, жёлтый — осталось 5 минут, красный — время вышло и звучит сигнал.</p></div>
-      <div class="feat"><div class="ic" style="background:var(--warn-bg)">➕</div><h3>Продление в 1 клик</h3><p>Кнопка «Продлить» прямо на карточке: +10, +30 минут — сумма сразу добавляется в счёт.</p></div>
-      <div class="feat"><div class="ic" style="background:var(--soft)">🎟️</div><h3>Свои тарифы</h3><p>Владелец сам задаёт тарифы: 10, 20, 30 минут, час, безлимит. Есть готовые шаблоны по рынку.</p></div>
-      <div class="feat"><div class="ic" style="background:var(--soft)">👥</div><h3>Сотрудники и доступы</h3><p>Создавайте кассиров и включайте/выключайте каждое право: продажа, отчёты, расходы, возвраты…</p></div>
-      <div class="feat"><div class="ic" style="background:var(--ok-bg)">💵</div><h3>Наличные или карта</h3><p>Ручной учёт способа оплаты без эквайринга и интеграций. Смены с подсчётом кассы.</p></div>
-      <div class="feat"><div class="ic" style="background:var(--warn-bg)">📊</div><h3>Отчёты за день</h3><p>Посещения, продления, выручка по способам оплаты, расходы и популярные тарифы.</p></div>
+      <div class="feat"><div class="ic">⏱️</div><h3>Таймер на каждого ребёнка</h3><p>Зелёный — играет, жёлтый — осталось 5 минут, красный — время вышло и звучит сигнал. 25–30 детей на одном экране.</p></div>
+      <div class="feat"><div class="ic">⏩</div><h3>Продление в один клик</h3><p>+10, +20, +30 минут — сумма сразу добавляется в счёт. Ничего не нужно считать вручную.</p></div>
+      <div class="feat"><div class="ic">💵</div><h3>Наличные и карта</h3><p>При выходе видно, что оплачено и кем. Касса по каждому кассиру и сверка смены до сума.</p></div>
+      <div class="feat"><div class="ic">🖨️</div><h3>Печать чека</h3><p>Чековые принтеры 58 и 80 мм (Xprinter и другие) по USB. Статус принтера онлайн / офлайн прямо в программе.</p></div>
+      <div class="feat"><div class="ic">👥</div><h3>Сотрудники и права</h3><p>Создавайте кассиров и включайте каждое право отдельно: продажа, отчёты, расходы, возвраты.</p></div>
+      <div class="feat"><div class="ic">📊</div><h3>Отчёты</h3><p>Выручка за день, неделю, по кассирам, наличные и карта, продления, расходы, популярные тарифы.</p></div>
+    </div>
+  </div>
+</section>
+
+<section class="block" style="padding-top:20px">
+  <div class="wrap">
+    <h2>Как это выглядит</h2>
+    <div class="gallery">
+      <figure><img class="shot" src="img/exit.png" alt="Панель выхода ребёнка и оплаты" loading="lazy"><figcaption>Выход и оплата<span>Наличные или карта, чек печатается сразу.</span></figcaption></figure>
+      <figure><img class="shot" src="img/reports2.png" alt="Отчёты по кассирам и сменам" loading="lazy"><figcaption>Отчёты владельца<span>Кто сколько принял — наличными и картой.</span></figcaption></figure>
+      <figure><img class="shot" src="img/staff.png" alt="Настройка прав сотрудника" loading="lazy"><figcaption>Права сотрудников<span>Каждое право включается отдельно.</span></figcaption></figure>
+      <figure><img class="shot" src="img/tariffs.png" alt="Тарифы площадки" loading="lazy"><figcaption>Свои тарифы<span>10, 20, 30 минут, час, безлимит — цены задаёте вы.</span></figcaption></figure>
+    </div>
+  </div>
+</section>
+
+<section class="block" id="start">
+  <div class="wrap">
+    <h2>Как начать</h2>
+    <div class="steps">
+      <div class="step"><h3>Заявка</h3><p>Оставьте имя и телефон — мы перезвоним и всё расскажем.</p></div>
+      <div class="step"><h3>Установка</h3><p>Устанавливаем программу на ваш компьютер и подключаем чековый принтер.</p></div>
+      <div class="step"><h3>Обучение</h3><p>Показываем кассирам, как работать. Это занимает 15 минут.</p></div>
+      <div class="step"><h3>Работа</h3><p>Подписка на 1, 3, 6 или 12 месяцев. Обновления и поддержка включены.</p></div>
     </div>
   </div>
 </section>
@@ -126,49 +141,89 @@
   <div class="wrap">
     <div class="band">
       <div>
-        <h2>Как проходит посещение</h2>
-        <p style="opacity:.8">Счёт и посещение независимы: оплатить можно на входе, а таймер продолжит работать.</p>
+        <h2>Работает без интернета</h2>
+        <p>Касса, сервер и база данных находятся на вашем компьютере. Пропал интернет — площадка продолжает работать.</p>
       </div>
-      <ol>
-        <li>Кассир вводит имя ребёнка и выбирает тариф.</li>
-        <li>Счёт можно закрыть сразу — «Наличные» выбраны по умолчанию.</li>
-        <li>За 5 минут карточка желтеет, после окончания — краснеет и звучит сигнал.</li>
-        <li>«Продлить» добавляет минуты и сумму: в открытый счёт или отдельным счётом на доплату.</li>
-        <li>«Завершить» — оплатить остаток и отметить выход. Печать талона 58/80 мм.</li>
-      </ol>
+      <ul>
+        <li>Резервная копия базы каждый день</li>
+        <li>Программа запускается вместе с Windows</li>
+        <li>Чек печатается без лишних окон</li>
+        <li>Интернет нужен только для активации и продления подписки</li>
+      </ul>
     </div>
   </div>
 </section>
 
-<section class="block" id="pricing">
+<section class="block" id="faq">
   <div class="wrap">
-    <h2>Подписка для площадки</h2>
-    <p class="lead">Одна площадка — свои сотрудники, тарифы и отчёты. Доступ активируется ключом.</p>
-    <div class="price">
-      <div class="plan"><h3>1 месяц</h3><div class="sum">— сум</div><p>Все функции, без ограничений по сотрудникам.</p><a class="btn ghost" href="app.html">Демо</a></div>
-      <div class="plan best"><h3>3 месяца</h3><div class="sum">— сум</div><p>То же самое, оплата раз в квартал.</p><a class="btn" href="app.html">Демо</a></div>
+    <h2>Частые вопросы</h2>
+    <details><summary>Нужен ли интернет?</summary><p>Нет. Интернет нужен только один раз для активации и время от времени для проверки подписки. Всё остальное работает без него.</p></details>
+    <details><summary>Какие принтеры подходят?</summary><p>Чековые термопринтеры 58 и 80 мм, подключённые по USB: Xprinter (например, XP-T80Q), Rongta, Epson и другие с драйвером для Windows.</p></details>
+    <details><summary>Есть ли узбекский язык?</summary><p>Да. Программа и чеки работают на русском и узбекском, переключение в одно касание.</p></details>
+    <details><summary>Что будет, если закончится подписка?</summary><p>Данные сохраняются. Новые посещения нельзя открыть, пока подписка не продлена, но детей на площадке можно рассчитать, а отчёты остаются доступны.</p></details>
+    <details><summary>Можно ли попробовать?</summary><p>Да — откройте <a href="app.html">демо-версию</a> прямо в браузере или оставьте заявку, и мы покажем программу.</p></details>
+  </div>
+</section>
+
+<section class="block" id="contact">
+  <div class="wrap contact">
+    <div>
+      <h2>Оставьте заявку</h2>
+      <p class="lead">Перезвоним, ответим на вопросы и договоримся об установке.</p>
+      <div class="card" style="margin-top:18px">
+        <b>Телефон для связи</b>
+        <a class="phone" data-phone href="#"></a>
+        <p class="small" style="margin:0">Звоните или пишите в Telegram</p>
+        <a class="btn sm ghost" data-telegram href="#" target="_blank" rel="noopener" style="margin-top:12px">✈ Написать в Telegram</a>
+        <a class="btn" data-download href="#" style="margin-top:16px">⬇ Скачать для Windows</a>
+      </div>
     </div>
+    <form class="card" id="lead">
+      <label>Ваше имя</label><input class="input" name="name" required maxlength="60" autocomplete="name">
+      <label>Телефон</label><input class="input" name="phone" required maxlength="30" inputmode="tel" autocomplete="tel" placeholder="+998 __ ___ __ __">
+      <label>Название площадки (необязательно)</label><input class="input" name="venue" maxlength="80">
+      <label>Комментарий (необязательно)</label><textarea class="input" name="message" rows="3" maxlength="300"></textarea>
+      <input class="hp" name="website" tabindex="-1" autocomplete="off" aria-hidden="true">
+      <button class="btn xl" type="submit" style="width:100%;margin-top:16px">Отправить заявку</button>
+      <p id="msg" role="status"></p>
+    </form>
   </div>
 </section>
 
 <footer>
   <div class="wrap">
-    <span>© PlayPos · демо-версия · Ташкент</span>
-    <span class="pal">Палитра:
-      <button title="Солнечная площадка" style="background:#ff7a00" data-p="sunny"></button>
-      <button title="Конфетти" style="background:#7b5cff" data-p="candy"></button>
-      <button title="Джунгли" style="background:#0fb5a5" data-p="jungle"></button>
-      <button title="Ночь" style="background:#2f62f0" data-p="night"></button>
-    </span>
-    <a href="brand.html">Бренд-бук и варианты названия</a>
+    <span>© PlayPos · Ташкент</span>
+    <a data-phone href="#"></a>
+    <a href="app.html">Демо-версия</a>
   </div>
 </footer>
 <script>
-  const K = "playpos-palette";
-  const set = (p) => { document.documentElement.dataset.palette = p; try { localStorage.setItem(K, p); } catch (e) {} };
-  try { const s = localStorage.getItem(K); if (s) document.documentElement.dataset.palette = s; } catch (e) {}
-  document.querySelectorAll("[data-p]").forEach((b) => b.onclick = () => set(b.dataset.p));
+  // Контакты и ссылка на установщик — меняются здесь
+  const PHONE = "+998 99 362 49 04";
+  const DOWNLOAD = "https://github.com/Sariofficial23/Playpos/releases/latest/download/PlayPos-Setup.exe";
+
+  document.querySelectorAll("[data-download]").forEach((a) => (a.href = DOWNLOAD));
+  document.querySelectorAll("[data-telegram]").forEach((a) => (a.href = "https://t.me/" + PHONE.replace(/[^\d+]/g, "")));
+  document.querySelectorAll("[data-phone]").forEach((a) => { a.textContent = PHONE; a.href = "tel:" + PHONE.replace(/[^\d+]/g, ""); });
   document.getElementById("langsw").innerHTML = PPI18N.switcher();
+  try { const s = localStorage.getItem("playpos-palette"); if (s) document.documentElement.dataset.palette = s; } catch (e) {}
+
+  document.getElementById("lead").onsubmit = async (e) => {
+    e.preventDefault();
+    const btn = e.target.querySelector("button"), msg = document.getElementById("msg");
+    btn.disabled = true; msg.textContent = "";
+    try {
+      const r = await fetch("/api/rpc", { method: "POST", headers: { "Content-Type": "application/json", "X-PlayPos": "1" },
+        body: JSON.stringify({ op: "lead.create", ...Object.fromEntries(new FormData(e.target)) }) });
+      const out = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(out.error || "Ошибка");
+      e.target.reset();
+      msg.style.color = "var(--ok)"; msg.textContent = PPI18N.tr("Спасибо! Мы скоро вам перезвоним.");
+    } catch (err) {
+      msg.style.color = "var(--danger)"; msg.textContent = PPI18N.tr(err.message === "Failed to fetch" ? "Нет связи. Позвоните нам по телефону." : err.message);
+    }
+    btn.disabled = false;
+  };
 </script>
 </body>
 </html>

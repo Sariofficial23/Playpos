@@ -4,7 +4,7 @@
   const TZ = "Asia/Tashkent";
   const DAY = 86400000;
   let S = null;
-  const ui = { filter: "all", q: "" };
+  const ui = { tab: "clients", filter: "all", q: "" };
 
   const $ = (sel, el = document) => el.querySelector(sel);
   const esc = (v) => String(v ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
@@ -76,6 +76,7 @@
 
   /* ---------- Кабинет ---------- */
   function viewMain() {
+    const newLeads = (S.leads || []).filter((l) => !l.done).length;
     const cs = S.clients.map((c) => ({ ...c, st: stateOf(c) }));
     const count = (k) => cs.filter((c) => c.st.k === k).length;
     const q = ui.q.toLowerCase();
@@ -94,10 +95,11 @@
     $("#root").innerHTML = `<div class="layout">
       <aside class="side">
         <a class="logo"><span class="logo-mark"><svg width="18" height="20" viewBox="0 0 18 20"><path d="M3 2.5c0-1.2 1.3-1.9 2.3-1.3l11 7.5c.9.6.9 2 0 2.6l-11 7.5C4.3 19.4 3 18.7 3 17.5z" fill="#fff"/></svg></span><span>Play<b>Pos</b></span></a>
-        <a class="nav on"><span class="em">🏢</span>Клиенты</a>
+        <a class="nav ${ui.tab === "clients" ? "on" : ""}" data-tab="clients" href="#"><span class="em">🏢</span>Клиенты</a>
+        <a class="nav ${ui.tab === "leads" ? "on" : ""}" data-tab="leads" href="#"><span class="em">📨</span>Заявки${newLeads ? ` <span class="tag red" style="margin-left:auto">${newLeads}</span>` : ""}</a>
         <div class="who"><b>${esc(S.email)}</b>Администратор PlayPos<div class="row" style="margin-top:8px"><button class="btn sm ghost" id="out">Выйти</button></div></div>
       </aside>
-      <main class="main">
+      <main class="main">${ui.tab === "leads" ? leadsView() : `
         <div class="top"><h1>Клиенты</h1><button class="btn" id="add">＋ Новый клиент</button></div>
         <div class="stats">
           <div class="stat"><small>Всего клиентов</small><b>${cs.length}</b></div>
@@ -108,14 +110,29 @@
         <div class="bar"><input class="input" id="q" placeholder="Поиск: площадка, телефон, логин" value="${esc(ui.q)}"></div>
         <div class="cats" id="flt">${seg.map(([k, t, n]) => `<button class="cat cat-${k} ${ui.filter === k ? "on" : ""}" data-f="${k}">${t}<span>${n}</span></button>`).join("")}</div>
         <div class="panel tbl">${rows ? `<table><thead><tr><th>Площадка</th><th>Телефон</th><th>Логин</th><th>Оплачено до</th><th>Статус</th><th>Программа</th><th></th></tr></thead><tbody>${rows}</tbody></table>`
-          : `<div class="empty">Клиентов пока нет. Нажмите «Новый клиент».</div>`}</div>
+          : `<div class="empty">Клиентов пока нет. Нажмите «Новый клиент».</div>`}</div>`}
       </main></div>`;
+    document.querySelectorAll("[data-tab]").forEach((a) => (a.onclick = (e) => { e.preventDefault(); ui.tab = a.dataset.tab; render(); }));
+    document.querySelectorAll("[data-lead]").forEach((c) => (c.onchange = () => act("admin.leadDone", { id: c.dataset.lead, done: c.checked }, c.checked ? "Заявка обработана" : "Заявка снова новая")));
+    if (ui.tab === "leads") return;
     $("#add").onclick = clientNew;
     $("#out").onclick = async () => { try { await api("admin.logout"); } catch (e) {} S = null; render(); };
     $("#q").oninput = (e) => { ui.q = e.target.value; const pos = e.target.selectionStart; render(); const i = $("#q"); i.focus(); i.setSelectionRange(pos, pos); };
     $("#flt").onclick = (e) => { const b = e.target.closest("[data-f]"); if (b) { ui.filter = b.dataset.f; render(); } };
     document.querySelectorAll("[data-ext]").forEach((b) => (b.onclick = (e) => { e.stopPropagation(); extendDialog(S.clients.find((c) => c.id === b.dataset.ext)); }));
     document.querySelectorAll("tr[data-id]").forEach((tr) => (tr.onclick = () => clientCard(S.clients.find((c) => c.id === tr.dataset.id))));
+  }
+
+  // Заявки с сайта: имя и телефон тех, кто хочет программу
+  function leadsView() {
+    const list = S.leads || [];
+    const rows = list.map((l) => `<tr style="${l.done ? "opacity:.55" : ""}">
+      <td>${dt(l.at)}</td><td><b>${esc(l.name)}</b>${l.venue ? `<br><small style="color:var(--muted)">${esc(l.venue)}</small>` : ""}</td>
+      <td><a href="tel:${esc(l.phone.replace(/[^\d+]/g, ""))}"><b>${esc(l.phone)}</b></a></td><td>${esc(l.message)}</td>
+      <td><label class="row"><input type="checkbox" data-lead="${l.id}" ${l.done ? "checked" : ""}> Обработана</label></td></tr>`).join("");
+    return `<div class="top"><h1>Заявки с сайта</h1></div>
+      <div class="panel tbl">${rows ? `<table><thead><tr><th>Дата</th><th>Имя / площадка</th><th>Телефон</th><th>Сообщение</th><th></th></tr></thead><tbody>${rows}</tbody></table>`
+        : `<div class="empty">Заявок пока нет. Они появятся, когда посетители сайта оставят имя и телефон.</div>`}</div>`;
   }
 
   const periodPick = (name, withLifetime) => `<div class="picks" id="${name}">${[[1, "1 месяц"], [3, "3 месяца"], [6, "6 месяцев"], [12, "12 месяцев"]].concat(withLifetime ? [["lifetime", "Бессрочно"]] : [])
