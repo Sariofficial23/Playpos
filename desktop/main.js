@@ -3,6 +3,7 @@ import { app, BrowserWindow, Menu, dialog, ipcMain, session, shell } from "elect
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { startCore } from "./core.js";
+import { listPrinters } from "./printers.js";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const PORT = 3700;
@@ -47,10 +48,21 @@ function buildMenu() {
   ]));
 }
 
-// Печать чека сразу на принтер по умолчанию, без окна выбора
-ipcMain.handle("print", (e) => new Promise((resolve) => {
-  e.sender.print({ silent: true, printBackground: false, margins: { marginType: "none" } }, (ok, reason) => resolve({ ok, reason }));
-}));
+// Принтеры Windows с состоянием (онлайн / офлайн / ошибка)
+ipcMain.handle("printers", (e) => listPrinters(e.sender).catch(() => []));
+// Печать чека без окна: на выбранный в настройках принтер, иначе на принтер по умолчанию
+ipcMain.handle("print", async (e, opts = {}) => {
+  const deviceName = typeof opts.deviceName === "string" ? opts.deviceName : "";
+  if (deviceName) {
+    const all = await e.sender.getPrintersAsync();
+    if (!all.some((p) => p.name === deviceName)) return { ok: false, reason: "Принтер не найден в Windows" };
+  }
+  return new Promise((resolve) => {
+    e.sender.print({ silent: true, printBackground: false, margins: { marginType: "none" }, ...(deviceName ? { deviceName } : {}) },
+      (ok, reason) => resolve({ ok, reason }));
+  });
+});
+ipcMain.handle("open-printer-settings", () => shell.openExternal(process.platform === "win32" ? "ms-settings:printers" : "about:blank"));
 
 app.whenReady().then(async () => {
   try {

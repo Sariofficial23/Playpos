@@ -368,18 +368,62 @@
       row: () => `<div class="ln"><span>${esc(r.a)}</span><span>${esc(r.b)}</span></div>`, big: () => `<div class="ln big"><span>${esc(r.a)}</span><span>${esc(r.b)}</span></div>`,
     })[r.k]()).join("");
   }
-  function printWindows(rows) {
+  function printWindows(rows, deviceName) {
     const paper = S.settings.paper === "58" ? 58 : 80;
     let st = document.getElementById("pageSize");
     if (!st) { st = document.createElement("style"); st.id = "pageSize"; document.head.appendChild(st); }
     st.textContent = "@page { margin: 0 }"; // ширину ленты (58/80 мм) задаёт драйвер принтера
     $("#print").innerHTML = `<div class="ticket" style="--paper:${paper === 80 ? 72 : 48}mm">${rowsHtml(rows)}</div>`;
     // В настольном приложении печать идёт сразу на принтер по умолчанию, без окна
-    setTimeout(() => {
-      if (!window.PlayPosDesktop) return window.print();
-      // если принтер по умолчанию не выбран или недоступен — обычное окно печати
-      window.PlayPosDesktop.print().then((r) => { if (!r || !r.ok) window.print(); }, () => window.print());
-    }, 80);
+    return new Promise((resolve) => setTimeout(async () => {
+      if (!window.PlayPosDesktop) { window.print(); return resolve({ ok: true }); }
+      let r;
+      try { r = await window.PlayPosDesktop.print({ deviceName: deviceName || S.settings.receiptPrinter || "" }); }
+      catch (e) { r = { ok: false, reason: String(e && e.message || e) }; }
+      // чек после оплаты: если тихая печать не удалась — обычное окно печати, чтобы чек всё равно вышел
+      if ((!r || !r.ok) && !deviceName) window.print();
+      resolve(r || { ok: false });
+    }, 80));
+  }
+
+  /* ---------- Принтеры (версия для Windows) ---------- */
+  const desktop = () => !!window.PlayPosDesktop;
+  async function loadPrinters() {
+    if (!desktop()) return;
+    try { ui.printers = await window.PlayPosDesktop.printers(); } catch (e) { ui.printers = []; }
+    const c = $("#prChip"); if (c) c.outerHTML = printerChip();
+    const l = $("#prList"); if (l) l.innerHTML = printerRows();
+  }
+  // Принтер для чеков: выбранный в настройках, иначе принтер Windows по умолчанию
+  function receiptPrinter() {
+    const list = ui.printers || [];
+    return list.find((p) => p.name === S.settings.receiptPrinter) || (!S.settings.receiptPrinter && list.find((p) => p.isDefault)) || null;
+  }
+  const STATE = { online: ["🟢", "green"], offline: ["🔴", "red"], error: ["🟠", "red"], virtual: ["⚪", "grey"], unknown: ["⚪", "grey"] };
+  function printerChip() {
+    if (!desktop() || !ui.printers) return `<span id="prChip"></span>`;
+    const p = receiptPrinter();
+    if (!p) return `<span id="prChip" class="prchip red">🖨 ${PPI18N.tr("Принтер не выбран")}</span>`;
+    return `<span id="prChip" class="prchip ${STATE[p.state][1]}" title="${esc(p.text)}">🖨 ${STATE[p.state][0]} ${esc(PPI18N.tr(p.state === "online" ? "Принтер онлайн" : p.state === "offline" ? "Принтер офлайн" : p.text))}</span>`;
+  }
+  function printerRows() {
+    const list = ui.printers;
+    if (!list) return `<tr><td colspan="5">${PPI18N.tr("Загрузка…")}</td></tr>`;
+    if (!list.length) return `<tr><td colspan="5"><b>${PPI18N.tr("Принтеры не найдены.")}</b> ${PPI18N.tr("Подключите принтер, установите драйвер и нажмите «Обновить».")}</td></tr>`;
+    const cur = receiptPrinter();
+    return list.map((p) => `<tr>
+      <td><input type="radio" name="rp" value="${esc(p.name)}" ${cur && cur.name === p.name ? "checked" : ""} ${p.state === "virtual" ? "disabled" : ""}></td>
+      <td><b>${esc(p.displayName)}</b>${p.isDefault ? ` <span class="tag">${PPI18N.tr("по умолчанию")}</span>` : ""}<br><small style="color:var(--muted)">${esc([p.driver, p.port].filter(Boolean).join(" · "))}</small></td>
+      <td><span class="tag ${STATE[p.state][1]}">${STATE[p.state][0]} ${esc(PPI18N.tr(p.text))}</span></td>
+      <td>${p.state === "virtual" ? "" : `<button class="btn sm ghost" data-test="${esc(p.name)}">${PPI18N.tr("Тестовый чек")}</button>`}</td></tr>`).join("");
+  }
+  async function testPrint(name) {
+    const rows = [R.title(S.settings.venue), R.center("Тестовый чек"), R.hr(), R.row("Принтер", name), R.row("Дата", dt(now())),
+      R.row("Кириллица", "Ёё Жж Щщ №"), R.row("O'zbekcha", "O'yin maydonchasi"), R.big("ИТОГО", money(12345)), R.hr(),
+      R.center("Если вы видите этот чек — принтер настроен правильно")];
+    const r = await printWindows(rows, name);
+    if (r && r.ok) toast(`${PPI18N.tr("Тестовый чек отправлен на")} «${esc(name)}». ${PPI18N.tr("Если он не вышел — проверьте бумагу и драйвер.")}`);
+    else toast(`${PPI18N.tr("Не удалось напечатать:")} ${esc(PPI18N.tr((r && r.reason) || "ошибка"))}`, "bad");
   }
   const trRow = (r) => ({ ...r, t: r.t && PPI18N.tr(r.t), a: r.a && PPI18N.tr(r.a), b: r.b && PPI18N.tr(r.b) });
   async function sendToPrinter(rows, opts = {}) {
@@ -399,6 +443,9 @@
   function printReceipt(bills) {
     bills = bills.filter((b) => b.status === "paid");
     if (!bills.length) return;
+    const pr = desktop() && S.settings.printMode !== "usb" ? receiptPrinter() : null;
+    if (desktop() && S.settings.printMode !== "usb" && (!pr || pr.state === "offline" || pr.state === "error"))
+      toast(`🖨 ${pr ? esc(pr.displayName) + ": " + esc(PPI18N.tr(pr.text)) : PPI18N.tr("Принтер не выбран")}. ${PPI18N.tr("Чек можно напечатать позже: «Счета» → «🖨 Чек».")}`, "warn");
     const v = S.visits.find((x) => x.id === bills[0].visitId) || {};
     const b0 = bills[0], total = bills.reduce((a, b) => a + billTotal(b), 0);
     sendToPrinter([
@@ -587,7 +634,7 @@
       <aside class="side" id="side">
         <a class="logo" href="index.html">${logoMark()}<span>Play<b>Pos</b></span></a>
         ${NAV.filter((n) => !n[3] || can(n[3])).map((n) => `<a class="nav ${ui.route === n[0] ? "on" : ""}" href="#${n[0]}"><span class="em">${n[1]}</span>${n[2]}</a>`).join("")}
-        <div class="who"><b>${esc(u.name)}</b>${ROLES[u.role].name}<br>${sh ? `Смена №${sh.no}, открыта в ${hm(sh.openedAt)}` : "Смена не открыта"}
+        <div class="who">${printerChip()}<b>${esc(u.name)}</b>${ROLES[u.role].name}<br>${sh ? `Смена №${sh.no}, открыта в ${hm(sh.openedAt)}` : "Смена не открыта"}
           <div class="row" style="margin-top:8px"><button class="btn sm ghost" id="logout">Выйти</button>${PPI18N.switcher()}</div></div>
       </aside>
       <main class="main">
@@ -905,7 +952,11 @@
   function viewSettings() {
     let pal = "jungle"; try { pal = localStorage.getItem(PALETTE) || pal; } catch (e) {}
     const st = S.settings;
-    return shell("Настройки", "", `<div class="grid2">
+    const printersPanel = desktop() ? `<div class="panel"><div class="row" style="justify-content:space-between"><h2 style="margin:0">Принтеры</h2>
+        <div class="row"><button class="btn sm ghost" id="prRefresh">↻ Обновить</button><button class="btn sm ghost" id="prWin">Настройки принтеров Windows</button></div></div>
+        <p class="note">Выберите принтер для чеков и нажмите «Тестовый чек». Состояние обновляется само каждые 10 секунд. Новый принтер: подключите его, установите драйвер (бумага 80 мм, поля 0) и нажмите «Обновить».</p>
+        <div class="tbl"><table><thead><tr><th>Чеки</th><th>Принтер</th><th>Состояние</th><th></th></tr></thead><tbody id="prList">${printerRows()}</tbody></table></div></div>` : "";
+    return shell("Настройки", "", `${printersPanel}<div class="grid2">
       <div class="panel"><h2>Площадка</h2>
         <label style="display:block;font-weight:800;margin:6px 0">Название (печатается на талоне)</label><input class="input" id="stV" value="${esc(st.venue)}" style="width:100%">
         <label style="display:block;font-weight:800;margin:14px 0 6px">Ширина бумаги принтера</label>
@@ -928,6 +979,17 @@
   }
   function mountSettings() {
     let paper = S.settings.paper, mode = S.settings.printMode || "windows";
+    if (desktop()) {
+      loadPrinters();
+      $("#prRefresh").onclick = () => { ui.printers = null; $("#prList").innerHTML = printerRows(); loadPrinters(); };
+      $("#prWin").onclick = () => window.PlayPosDesktop.openPrinterSettings();
+      $("#prList").onchange = (e) => {
+        if (e.target.name !== "rp") return;
+        S.settings.receiptPrinter = e.target.value; saveDevice({ receiptPrinter: e.target.value });
+        toast(`${PPI18N.tr("Чеки будут печататься на")} «${esc(e.target.value)}»`); loadPrinters();
+      };
+      $("#prList").onclick = (e) => { const b = e.target.closest("[data-test]"); if (b) testPrint(b.dataset.test); };
+    }
     $("#stM").onclick = (e) => {
       const b = e.target.closest("[data-m]"); if (!b) return; mode = b.dataset.m;
       document.querySelectorAll("#stM button").forEach((x) => x.classList.toggle("on", x === b));
@@ -1031,6 +1093,10 @@
     } catch (e) {}
   }
   setInterval(poll, 5000);
+  // Состояние принтера: в настройках каждые 10 секунд, в остальное время — раз в 30 секунд
+  let prTick = 0;
+  setInterval(() => { prTick++; if (S && desktop() && (ui.route === "settings" || prTick % 3 === 0)) loadPrinters(); }, 10000);
+  if (desktop()) setTimeout(loadPrinters, 1500);
   document.addEventListener("visibilitychange", () => { if (!document.hidden) poll(); });
   (async () => {
     $("#root").innerHTML = `<div class="login"><div class="login-box">${PPI18N.tr("Загрузка…")}</div></div>`;
