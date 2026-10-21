@@ -59,6 +59,7 @@ app.whenReady().then(async () => {
       backupDir: backupDir(),
       webRoot: path.join(here, "app", "web"),
       port: PORT,
+      appVersion: app.getVersion(),
     });
   } catch (e) {
     dialog.showErrorBox("PlayPos", "Не удалось запустить кассу.\n\n" + e.message + (e.code === "EADDRINUSE" ? `\n\nПорт ${PORT} занят другой программой.` : ""));

@@ -1,6 +1,7 @@
 // Единая точка входа API: POST /api/rpc { op, ...данные }.
 import { ensureSchema } from "../lib/db.js";
 import { run } from "../lib/ops.js";
+import { isPlatformOp, runPlatform } from "../lib/admin.js";
 
 function send(res, status, data) {
   res.statusCode = status;
@@ -25,7 +26,8 @@ export default async function handler(req, res) {
     let body;
     try { body = await readBody(req); } catch { return send(res, 400, { error: "Неверный запрос" }); }
     await ensureSchema();
-    const out = await run(String(body.op || ""), { req, res, body });
+    const op = String(body.op || "");
+    const out = await (isPlatformOp(op) ? runPlatform : run)(op, { req, res, body });
     send(res, 200, out);
   } catch (e) {
     if (e.status) return send(res, e.status, { error: e.message });

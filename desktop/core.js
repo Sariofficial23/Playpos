@@ -4,11 +4,16 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { PGlite } from "@electric-sql/pglite";
 import { PGLiteSocketServer } from "@electric-sql/pglite-socket";
+import { createLicense } from "./license.js";
 
 const KEEP_BACKUPS = 30;
 
-export async function startCore({ dataDir, backupDir, webRoot, port = 3700, host = "127.0.0.1" }) {
+const LICENSE_URL = process.env.PLAYPOS_LICENSE_URL || "https://playpos-dusky.vercel.app/api/rpc";
+
+export async function startCore({ dataDir, backupDir, webRoot, port = 3700, host = "127.0.0.1", appVersion = "dev" }) {
   await fs.mkdir(dataDir, { recursive: true });
+  const license = await createLicense({ dir: dataDir, serverUrl: LICENSE_URL, appVersion });
+  globalThis.PLAYPOS_LICENSE = license;
   const pg = await PGlite.create(path.join(dataDir, "pgdata"));
   const pgServer = new PGLiteSocketServer({ db: pg, port: 0, host: "127.0.0.1" });
   await pgServer.start();
@@ -46,6 +51,7 @@ export async function startCore({ dataDir, backupDir, webRoot, port = 3700, host
 
   async function stop() {
     clearInterval(timer);
+    license.stop();
     await new Promise((ok) => http.close(ok));
     try { await db().end({ timeout: 2 }); } catch (e) {}
     await pgServer.stop();

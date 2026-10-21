@@ -84,5 +84,44 @@ test("PlayPos API", { skip }, async (t) => {
     assert.equal((await call(handler, null, { op: "login", login: "owner", password: "secret123" })).status, 429);
   });
 
+  await t.test("платформа: администратор, клиент, активация, продление, отключение", async () => {
+    const crypto = await import("node:crypto");
+    const setupA = await call(handler, null, { op: "admin.setup", token: "test-setup-token", email: "me@playpos.uz", password: "adminpass1" });
+    assert.equal(setupA.status, 200);
+    const adm = setupA.cookie;
+    assert.equal((await call(handler, null, { op: "admin.setup", token: "test-setup-token", email: "x@y.uz", password: "adminpass1" })).status, 409);
+    assert.equal((await call(handler, owner, { op: "admin.state" })).status, 401); // сессия кассы не даёт доступ к админке
+    const created = await call(handler, adm, { op: "admin.clientCreate", venue: "Kids Jungle", contact: "Азиз", phone: "+998901234567", login: "kidsjungle", password: "client123", period: "1", amount: 300000 });
+    assert.equal(created.status, 200);
+    const clientId = created.data.id;
+    // активация на компьютере A, повтор на компьютере B запрещён
+    const act = await call(handler, null, { op: "license.activate", login: "kidsjungle", password: "client123", deviceId: "device-AAAA" });
+    assert.equal(act.status, 200);
+    const [body, sig] = act.data.token.split(".");
+    assert.ok(crypto.verify(null, Buffer.from(body), act.data.publicKey, Buffer.from(sig, "base64url")));
+    const lic = JSON.parse(Buffer.from(body, "base64url").toString());
+    assert.equal(lic.deviceId, "device-AAAA");
+    const daysLeft = (lic.until - Date.now()) / 86400000;
+    assert.ok(daysLeft > 27 && daysLeft < 32, "срок около месяца");
+    assert.equal((await call(handler, null, { op: "license.activate", login: "kidsjungle", password: "client123", deviceId: "device-BBBB" })).status, 409);
+    // продление от текущего окончания: +3 месяца
+    await sql`update clients set paid_until = '2027-01-31T12:00:00+05:00' where id = ${clientId}`;
+    const ext = await call(handler, adm, { op: "admin.clientExtend", id: clientId, period: "1", amount: 300000 });
+    assert.equal(new Date(ext.data.until).toLocaleDateString("en-CA", { timeZone: "Asia/Tashkent" }), "2027-02-28"); // 31 янв + 1 мес = последний день февраля
+    // обновление лицензии и отключение доступа
+    const ref = await call(handler, null, { op: "license.refresh", clientId, deviceId: "device-AAAA", deviceKey: act.data.deviceKey });
+    assert.equal(ref.status, 200);
+    await call(handler, adm, { op: "admin.clientActive", id: clientId, active: false });
+    const ref2 = await call(handler, null, { op: "license.refresh", clientId, deviceId: "device-AAAA", deviceKey: act.data.deviceKey });
+    assert.equal(JSON.parse(Buffer.from(ref2.data.token.split(".")[0], "base64url").toString()).active, false);
+    assert.equal((await call(handler, null, { op: "license.refresh", clientId, deviceId: "device-AAAA", deviceKey: "wrong-key-123" })).status, 403);
+    // отвязка компьютера → можно активировать на новом
+    await call(handler, adm, { op: "admin.clientActive", id: clientId, active: true });
+    await call(handler, adm, { op: "admin.clientUnbind", id: clientId });
+    assert.equal((await call(handler, null, { op: "license.activate", login: "kidsjungle", password: "client123", deviceId: "device-BBBB" })).status, 200);
+    const st = (await call(handler, adm, { op: "admin.state" })).data;
+    assert.equal(st.payments.filter((p) => p.clientId === clientId).length, 2);
+  });
+
   await sql.end();
 });

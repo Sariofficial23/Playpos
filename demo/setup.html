@@ -29,8 +29,10 @@
   const post = (body) => fetch("/api/rpc", { method: "POST", headers: { "Content-Type": "application/json", "X-PlayPos": "1" }, body: JSON.stringify(body) });
   // В настольном приложении код установки не нужен; если площадка уже есть — сразу в кассу
   post({ op: "info" }).then((r) => r.json()).then((i) => {
-    if (!i.needsSetup) location.href = "pos";
+    if (i.desktop && i.license && !i.license.activated) return (location.href = "activate");
+    if (!i.needsSetup) return (location.href = "pos");
     if (i.desktop) document.getElementById("tokenBox").remove();
+    if (i.license && i.license.venue) document.querySelector("[name=venue]").value = i.license.venue;
   }).catch(() => {});
   document.getElementById("f").onsubmit = async (e) => {
     e.preventDefault();

@@ -649,6 +649,15 @@
     return list.length ? list.map(ui.layout === "list" ? row : card).join("") : `<div class="empty" style="grid-column:1/-1">${ui.cat === "all" ? "Сейчас на площадке никого нет. Нажмите «Новое посещение»." : "В этой категории сейчас никого нет."}</div>`;
   }
 
+  // Подписка программы (только в версии для Windows): предупреждение за 7 дней и после окончания
+  function licenseBanner() {
+    const l = S.license;
+    if (!l) return "";
+    if (!l.ok) return `<div class="banner" style="background:var(--danger-bg);color:#8d1422">⛔ ${esc(l.reason)}. Новые посещения и смены недоступны; дети на площадке и отчёты — доступны.</div>`;
+    if (l.daysLeft != null && l.daysLeft <= 7) return `<div class="banner">⏳ Подписка PlayPos заканчивается через ${l.daysLeft} дн. (${new Date(l.until).toLocaleDateString("ru-RU", { timeZone: TZ })}). Продлите, чтобы касса работала без перерыва.</div>`;
+    return "";
+  }
+
   function viewFloor() {
     const active = S.visits.filter((v) => !v.exitAt);
     const over = active.filter((v) => status(v) === "bad").length;
@@ -657,7 +666,7 @@
     const unpaid = S.bills.filter((b) => b.status === "open").reduce((a, b) => a + billTotal(b), 0);
     return shell("Площадка",
       `<button class="btn ghost sm" id="snd">${ui.soundCtx && S.settings.sound ? "🔔 Звук включён" : "🔕 Включить звук"}</button>${can("sell") ? `<button class="btn" id="nv">＋ Новое посещение</button>` : ""}`,
-      `${!myShift() && can("shift") ? `<div class="banner">Смена не открыта — оплату принять нельзя.<button class="btn sm" id="os">Открыть смену</button></div>` : ""}
+      `${licenseBanner()}${!myShift() && can("shift") ? `<div class="banner">Смена не открыта — оплату принять нельзя.<button class="btn sm" id="os">Открыть смену</button></div>` : ""}
       <div class="stats">
         <div class="stat"><small>Детей на площадке</small><b>${active.length}</b></div>
         <div class="stat"><small>Просрочено</small><b style="color:${over ? "var(--danger)" : "inherit"}">${over}</b></div>
@@ -1027,6 +1036,7 @@
     $("#root").innerHTML = `<div class="login"><div class="login-box">${PPI18N.tr("Загрузка…")}</div></div>`;
     try {
       const info = await api("info");
+      if (info.desktop && info.license && !info.license.activated) { location.href = "activate"; return; }
       if (info.needsSetup) { location.href = "setup"; return; }
     } catch (e) {}
     try { await refresh(); markSeen(); } catch (e) { S = null; }
