@@ -81,6 +81,24 @@ test("PlayPos API", { skip }, async (t) => {
     assert.ok(s2.visits.find((x) => x.id === v.visitId).exitAt);
   });
 
+  await t.test("просрочка: доплата за каждую начатую минуту добавляется при выходе сама", async () => {
+    const s0 = (await call(handler, owner, { op: "state" })).data;
+    assert.ok(s0.tariffs.some((x) => x.perMinute && x.name === "По факту (поминутно)")); // поминутный тариф есть сразу
+    assert.equal((await call(handler, owner, { op: "settings.save", venue: "A", warn: 5, overRate: 500 })).status, 200);
+    const v = (await call(handler, owner, { op: "visit.create", child: "Сара", tariffId: tariff10.id })).data;
+    await call(handler, owner, { op: "visit.checkout", visitId: v.visitId, exit: false, method: "cash" }); // оплатили 10 минут
+    await sql`update visits set start_at = now() - interval '22 minutes', end_at = now() - interval '11 minutes 30 seconds' where id = ${v.visitId}`;
+    const out = await call(handler, owner, { op: "visit.checkout", visitId: v.visitId, exit: true, method: "card" });
+    assert.equal(out.status, 200);
+    const s2 = (await call(handler, owner, { op: "state" })).data;
+    const bill = s2.bills.find((b) => b.id === out.data.paid[0]);
+    assert.equal(bill.items[0].amount, 12 * 500);
+    assert.equal(bill.method, "card");
+    // нельзя превратить фиксированный тариф в поминутный через «Изменить»
+    assert.equal((await call(handler, owner, { op: "tariff.save", id: tariff10.id, name: "10 минут", price: 1000, perMinute: true })).status, 404);
+    await call(handler, owner, { op: "settings.save", venue: "A", warn: 5, overRate: "" });
+  });
+
   await t.test("площадки изолированы: чужие данные не видны и не меняются", async () => {
     const [tb] = await sql`insert into tenants (name) values ('B') returning id`;
     const { default: bcrypt } = await import("bcryptjs");

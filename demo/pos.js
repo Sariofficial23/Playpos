@@ -130,6 +130,15 @@
   const openMins = (v) => Math.max(1, Math.ceil((now() - v.start) / MIN));
   const openDue = (v) => openMins(v) * v.rate;
   const timerText = (v) => (isOpenRate(v) ? clock(now() - v.start) : (status(v) === "bad" ? "+" : "") + clock(v.end - now()));
+  // Просрочка: каждая начатая минута после окончания по цене из настроек (по умолчанию — как в поминутном тарифе)
+  const overRate = () => {
+    const o = S.settings.overRate;
+    if (Number.isInteger(o) && o >= 0) return o;
+    const pm = S.tariffs.filter((t) => t.perMinute && !t.archived).map((t) => t.price);
+    return pm.length ? Math.min(...pm) : 0;
+  };
+  const overMins = (v) => (v.rate == null && !v.exitAt && now() > v.end ? Math.ceil((now() - v.end) / MIN) : 0);
+  const overDue = (v) => overMins(v) * overRate();
   const tariffPrice = (t) => (t.perMinute ? money(t.price) + "/мин" : money(t.price));
   function status(v) {
     if (v.exitAt) return "done";
@@ -336,33 +345,45 @@
     if (open.length && !can("pay")) return toast("Есть неоплаченный счёт — нужен сотрудник с правом оплаты", "bad");
     if (open.length && !requireShift()) return;
     let method = "cash";
-    const t = now(), over = Math.max(0, t - v.end);
-    const due = open.reduce((a, b) => a + billTotal(b), 0);
+    const t = now(), over = Math.max(0, t - v.end), rate = overRate();
+    const billsDue = open.reduce((a, b) => a + billTotal(b), 0);
+    const due = billsDue + overDue(v);
     const paidSum = bills.filter((b) => b.status === "paid").reduce((a, b) => a + billTotal(b), 0);
     modal(`<div class="dlg">
       <button class="xbtn" data-x aria-label="Закрыть">×</button>
       <h2>${exit ? "Выход ребёнка" : "Закрыть счёт"}</h2>
       <div class="sub">${esc(v.child)} · ${hm(v.start)}–${hm(v.end)} · на площадке ${clock(t - v.start)}</div>
-      ${over ? `<div class="banner" style="margin:12px 0 0">Время вышло ${clock(over)} назад. Если нужна доплата — нажмите «Продлить».</div>` : ""}
-      <div class="lines">${bills.map(billLines).join("")}</div>
+      ${over ? `<div class="banner" style="margin:12px 0 0">${rate ? `Время вышло ${clock(over)} назад — доплата за просрочку считается сама, ${money(rate)} за минуту.` : `Время вышло ${clock(over)} назад. Если нужна доплата — нажмите «Продлить».`}</div>` : ""}
+      <div class="lines">${bills.map(billLines).join("")}${over && rate ? `<div class="ln"><span id="ovT"></span><span id="ovA"></span></div>` : ""}</div>
       ${paidSum && due ? `<div class="ln muted"><span>Уже оплачено</span><span>${money(paidSum)}</span></div>` : ""}
-      <div class="tot"><span>${due ? "К оплате" : "Всё оплачено"}</span><b>${money(due || paidSum)}</b></div>
+      <div class="tot"><span>${due ? "К оплате" : "Всё оплачено"}</span><b id="coTot">${money(due || paidSum)}</b></div>
       ${due ? payButtons() : ""}
       <div class="row" style="margin-top:16px">
-        ${over && can("extend") ? `<button class="btn alt" id="coExt">⏩ Продлить</button>` : ""}
+        ${over && !rate && can("extend") ? `<button class="btn alt" id="coExt">⏩ Продлить</button>` : ""}
         <button class="btn big" id="coOk" style="flex:1">${due ? (exit ? "Подтвердить оплату и выход" : "Подтвердить оплату") : "Отметить выход"}</button>
       </div>
     </div>`, (m) => {
       if (due) mountPay(m, (x) => (method = x));
-      $("[data-x]", m).onclick = close;
+      // Сумма просрочки растёт, пока панель открыта; окончательно её считает сервер при подтверждении
+      const draw = () => {
+        if (!m.isConnected || !$("#ovT", m)) return clearInterval(iv);
+        $("#ovT", m).textContent = `${PPI18N.tr("Просрочка")}: ${overMins(v)} ${PPI18N.tr("мин")} × ${money(rate)}`;
+        $("#ovA", m).textContent = money(overDue(v));
+        $("#coTot", m).textContent = money(billsDue + overDue(v));
+      };
+      const iv = setInterval(draw, 1000); draw();
+      $("[data-x]", m).onclick = () => { clearInterval(iv); close(); };
       const ext = $("#coExt", m); if (ext) ext.onclick = () => { close(); extendDialog(v); };
       $("#coOk", m).onclick = async (e) => {
         busy(e.target, true);
         const out = await act("visit.checkout", { visitId: v.id, exit, method });
         if (!out) return busy(e.target, false);
-        if (out.paid.length && S.settings.autoReceipt !== false) printReceipt(S.bills.filter((b) => out.paid.includes(b.id)));
+        clearInterval(iv);
+        const paid = S.bills.filter((b) => out.paid.includes(b.id));
+        if (paid.length && S.settings.autoReceipt !== false) printReceipt(paid);
         close();
-        toast(`${esc(v.child)}: ${due ? `оплачено ${money(due)} (${methodName(method).toLowerCase()})` : "оплачено ранее"}${exit ? ", выход отмечен" : ""}`);
+        const sum = paid.reduce((a, b) => a + billTotal(b), 0);
+        toast(`${esc(v.child)}: ${sum ? `оплачено ${money(sum)} (${methodName(method).toLowerCase()})` : "оплачено ранее"}${exit ? ", выход отмечен" : ""}`);
       };
     }, { side: true });
   }
@@ -604,7 +625,8 @@
     modal(`<div class="dlg"><h2>${isNew ? "Новый тариф" : "Изменить тариф"}</h2>
       <label class="f">Название</label><input class="input" id="tfName" value="${esc(d.name)}" placeholder="Например, 30 минут" autofocus maxlength="40">
       <label class="f">Тип тарифа</label>
-      <div class="seg" id="tfK"><button data-k="fixed" class="${d.perMinute ? "" : "on"}">Фиксированное время</button><button data-k="pm" class="${d.perMinute ? "on" : ""}">Поминутно (VIP)</button></div>
+      ${isNew ? `<div class="seg" id="tfK"><button data-k="fixed" class="${d.perMinute ? "" : "on"}">Фиксированное время</button><button data-k="pm" class="${d.perMinute ? "on" : ""}">Поминутно (VIP)</button></div>`
+        : `<div class="summary" style="margin:0"><b>${d.perMinute ? "Поминутно (VIP)" : "Фиксированное время"}</b> — тип уже созданного тарифа не меняется. Нужен другой — создайте новый тариф.</div>`}
       <div class="grid2">
         <div class="tfFix"><label class="f">Длительность, минут</label><input class="input" id="tfMin" type="number" min="1" max="1440" value="${d.minutes}"></div>
         <div><label class="f" id="tfPL">Цена, сум</label><input class="input" id="tfPrice" type="number" min="0" step="100" value="${d.price}"></div>
@@ -628,7 +650,7 @@
           `Цена за минуту: <b>${money(p / mi)}</b> · за 30 минут: <b>${money((p / mi) * 30)}</b> · за час: <b>${money((p / mi) * 60)}</b>`;
       };
       ppm(); $("#tfMin", m).oninput = ppm; $("#tfPrice", m).oninput = ppm;
-      $("#tfK", m).onclick = (e) => { const b = e.target.closest("[data-k]"); if (b) { pm = b.dataset.k === "pm"; if (pm && isNew && +$("#tfPrice", m).value >= 10000) $("#tfPrice", m).value = 1000; ppm(); } };
+      if ($("#tfK", m)) $("#tfK", m).onclick = (e) => { const b = e.target.closest("[data-k]"); if (b) { pm = b.dataset.k === "pm"; if (pm && isNew && +$("#tfPrice", m).value >= 10000) $("#tfPrice", m).value = 1000; ppm(); } };
       $("[data-x]", m).onclick = close;
       $("#tfOk", m).onclick = async (e) => {
         const name = $("#tfName", m).value.trim(), minutes = pm ? 1 : Math.round(+$("#tfMin", m).value), price = Math.round(+$("#tfPrice", m).value);
@@ -721,7 +743,7 @@
 
   function card(v) {
     const st = status(v), vip = st === "vip";
-    const paid = openBills(v).length === 0;
+    const paid = openBills(v).length === 0 && !overDue(v);
     const label = { ok: "Играет", warn: "Скоро заканчивается", bad: "Время вышло — позовите ребёнка", vip: "Поминутно" }[st];
     return `<div class="card ${st}" data-v="${v.id}">
       <div class="head"><h3>${esc(v.child)}</h3>${vip ? `<span class="chip vip">при выходе</span>` : `<span class="chip ${paid ? "paid" : "open"}">${paid ? "✓ оплачен" : "● не оплачен"}</span>`}</div>
@@ -750,7 +772,7 @@
 
   /* Компактная строка списка — помещается 20–30 детей на одном экране моноблока */
   function row(v) {
-    const st = status(v), vip = st === "vip", paid = openBills(v).length === 0;
+    const st = status(v), vip = st === "vip", paid = openBills(v).length === 0 && !overDue(v);
     const hide = 'style="visibility:hidden" tabindex="-1"';
     return `<div class="lrow ${st}" data-v="${v.id}">
       <span class="dot"></span>
@@ -1077,6 +1099,8 @@
         </div>
         <label class="perm" style="margin-top:14px"><div><b>Печатать чек после оплаты</b><small>Чек выходит сразу, когда кассир подтверждает оплату</small></div><span class="switch"><input type="checkbox" id="stR" ${st.autoReceipt !== false ? "checked" : ""}><span></span></span></label>
         <label style="display:block;font-weight:800;margin:14px 0 6px">Предупреждать за, минут</label><input class="input" id="stW" type="number" min="1" max="30" value="${st.warn}">
+        <label style="display:block;font-weight:800;margin:14px 0 6px">Доплата за просрочку, сум за 1 минуту</label><input class="input" id="stO" type="number" min="0" step="100" value="${Number.isInteger(st.overRate) ? st.overRate : ""}" placeholder="как в поминутном тарифе: ${money(overRate())}">
+        <p class="note">Когда время вышло, при нажатии «Счёт» или «Выход» доплата за каждую начатую минуту добавляется сама. Пустое поле — цена из поминутного тарифа, 0 — не начислять.</p>
         <div class="row" style="margin-top:16px"><button class="btn" id="stSave">Сохранить</button></div></div>
       <div class="panel"><h2>Цвета бренда</h2>
         <div class="presets">${[["sunny", "Солнечная площадка", "#ff7a00"], ["candy", "Конфетти", "#7b5cff"], ["jungle", "Джунгли", "#0fb5a5"], ["night", "Ночь (как на макете)", "#2f62f0"]].map(([k, n, c]) => `<button class="pick ${pal === k ? "on" : ""}" data-pal="${k}"><span style="display:inline-block;width:18px;height:18px;border-radius:50%;background:${c};vertical-align:middle"></span> <b style="display:inline">${n}</b></button>`).join("")}</div>
@@ -1121,7 +1145,8 @@
       if ($("#stCp")) dev.codepage = Math.min(255, Math.max(0, Math.round(+$("#stCp").value || 17)));
       if ($("#stDr")) dev.drawer = $("#stDr").checked;
       saveDevice(dev);
-      await act("settings.save", { venue: $("#stV").value.trim(), warn: Math.round(+$("#stW").value || 5) }, "Сохранено");
+      const ov = $("#stO").value.trim();
+      await act("settings.save", { venue: $("#stV").value.trim(), warn: Math.round(+$("#stW").value || 5), overRate: ov === "" ? "" : Math.round(+ov) }, "Сохранено");
     };
     document.querySelectorAll("[data-pal]").forEach((b) => (b.onclick = () => { applyPalette(b.dataset.pal, true); render(); }));
   }
