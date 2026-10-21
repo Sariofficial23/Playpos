@@ -1,0 +1,72 @@
+{
+  "name": "playpos-desktop",
+  "productName": "PlayPos",
+  "version": "1.0.0",
+  "description": "PlayPos — касса и таймеры для детской площадки",
+  "author": "PlayPos",
+  "private": true,
+  "type": "module",
+  "main": "main.js",
+  "scripts": {
+    "prepare-app": "node scripts/prepare.mjs",
+    "start": "npm run prepare-app && electron .",
+    "dist:win": "npm run prepare-app && electron-builder --win nsis --publish never",
+    "dist:dir": "npm run prepare-app && electron-builder --dir --publish never"
+  },
+  "dependencies": {
+    "@electric-sql/pglite": "0.5.10",
+    "@electric-sql/pglite-socket": "0.2.13",
+    "bcryptjs": "3.0.3",
+    "postgres": "3.4.9"
+  },
+  "devDependencies": {
+    "electron": "44.9.3",
+    "electron-builder": "26.15.3"
+  },
+  "build": {
+    "appId": "uz.playpos.desktop",
+    "productName": "PlayPos",
+    "copyright": "PlayPos",
+    "directories": {
+      "output": "dist",
+      "buildResources": "build"
+    },
+    "files": [
+      "main.js",
+      "core.js",
+      "preload.cjs",
+      "package.json",
+      "app/**/*",
+      "build/icon.png"
+    ],
+    "asarUnpack": [
+      "node_modules/@electric-sql/**"
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "build/icon.png",
+      "artifactName": "PlayPos-Setup-${version}.exe"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "PlayPos",
+      "language": "1049"
+    },
+    "linux": {
+      "target": [
+        "dir"
+      ]
+    }
+  }
+}

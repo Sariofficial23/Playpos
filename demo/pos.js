@@ -374,7 +374,12 @@
     if (!st) { st = document.createElement("style"); st.id = "pageSize"; document.head.appendChild(st); }
     st.textContent = "@page { margin: 0 }"; // ширину ленты (58/80 мм) задаёт драйвер принтера
     $("#print").innerHTML = `<div class="ticket" style="--paper:${paper === 80 ? 72 : 48}mm">${rowsHtml(rows)}</div>`;
-    setTimeout(() => window.print(), 80);
+    // В настольном приложении печать идёт сразу на принтер по умолчанию, без окна
+    setTimeout(() => {
+      if (!window.PlayPosDesktop) return window.print();
+      // если принтер по умолчанию не выбран или недоступен — обычное окно печати
+      window.PlayPosDesktop.print().then((r) => { if (!r || !r.ok) window.print(); }, () => window.print());
+    }, 80);
   }
   const trRow = (r) => ({ ...r, t: r.t && PPI18N.tr(r.t), a: r.a && PPI18N.tr(r.a), b: r.b && PPI18N.tr(r.b) });
   async function sendToPrinter(rows, opts = {}) {
@@ -1020,6 +1025,10 @@
   document.addEventListener("visibilitychange", () => { if (!document.hidden) poll(); });
   (async () => {
     $("#root").innerHTML = `<div class="login"><div class="login-box">${PPI18N.tr("Загрузка…")}</div></div>`;
+    try {
+      const info = await api("info");
+      if (info.needsSetup) { location.href = "setup"; return; }
+    } catch (e) {}
     try { await refresh(); markSeen(); } catch (e) { S = null; }
     render();
   })();

@@ -1,0 +1,42 @@
+# Сборка установщика PlayPos для Windows. Готовый PlayPos-Setup-*.exe появляется в Releases репозитория.
+name: Desktop app (Windows)
+
+on:
+  push:
+    branches: [ccr-c1e6b03e-moq1qv, main]
+    paths: ["desktop/**", "lib/**", "api/**", "demo/**", ".github/workflows/desktop.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: desktop/package-lock.json
+      - name: Install
+        working-directory: desktop
+        run: npm ci
+      - name: Build installer
+        working-directory: desktop
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: "false"
+        run: npm run dist:win
+      - uses: actions/upload-artifact@v4
+        with:
+          name: PlayPos-Setup
+          path: desktop/dist/*.exe
+      - name: Publish release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: desktop-build-${{ github.run_number }}
+          name: PlayPos для Windows — сборка ${{ github.run_number }}
+          body: Установщик кассы PlayPos для Windows (касса + сервер + база на одном компьютере).
+          files: desktop/dist/*.exe
+          make_latest: true

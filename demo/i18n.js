@@ -170,7 +170,7 @@
     // Сайт (лендинг)
     "Возможности": "Imkoniyatlar", "Бренд": "Brend", "Открыть демо": "Demoni ochish", "Войти в кассу": "Kassaga kirish", "Установка": "O'rnatish", "Тариф возвращён": "Tarif qaytarildi", "Установка площадки": "Maydonchani o'rnatish",
     "Код установки": "O'rnatish kodi", "Название площадки": "Maydoncha nomi", "Имя владельца": "Egasining ismi", "Логин владельца (латиница)": "Egasining logini (lotin)",
-    "Пароль (минимум 6 символов)": "Parol (kamida 6 belgi)", "Создать площадку": "Maydoncha yaratish", "Неверный код установки": "O'rnatish kodi noto'g'ri",
+    "Пароль (минимум 6 символов)": "Parol (kamida 6 belgi)", "Создать площадку": "Maydoncha yaratish", "Один раз: создаём площадку и учётную запись владельца.": "Bir marta: maydoncha va egasining hisob qaydnomasi yaratiladi.", "Установка возможна только на компьютере кассы": "O'rnatish faqat kassa kompyuterida mumkin", "Неверный код установки": "O'rnatish kodi noto'g'ri",
     "Площадка уже создана — войдите под владельцем": "Maydoncha allaqachon yaratilgan — egasi sifatida kiring", "Готово! Открываем кассу…": "Tayyor! Kassa ochilmoqda…", "Для детских игровых площадок": "Bolalar o'yin maydonchalari uchun",
     "Каждая минута игры": "O'yinning har bir daqiqasi", "под контролем": "nazorat ostida",
     "PlayPos запускает таймер на ребёнка, подсвечивает тех, у кого время заканчивается, продлевает в один клик и сам пересчитывает сумму. Касса, смены, сотрудники и отчёты — в одном окне.": "PlayPos har bir bola uchun taymer ishga tushiradi, vaqti tugayotganlarni ajratib ko'rsatadi, bir bosishda uzaytiradi va summani o'zi qayta hisoblaydi. Kassa, smenalar, xodimlar va hisobotlar — bitta oynada.",
