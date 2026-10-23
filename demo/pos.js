@@ -207,13 +207,15 @@
   /* ---------- Модальные окна ---------- */
   function modal(html, mount, opts) {
     const m = $("#modal");
+    if (ui.onClose) { ui.onClose(); ui.onClose = null; }
     m.innerHTML = html; m.hidden = false;
     m.classList.toggle("drawer", !!(opts && opts.side));
     m.onclick = (e) => { if (e.target === m) close(); };
     if (mount) mount(m);
     const f = m.querySelector("[autofocus]"); if (f) f.focus();
   }
-  function close() { const m = $("#modal"); m.hidden = true; m.innerHTML = ""; }
+  // onClose — уборка окна (например, остановить секундный таймер суммы), как бы окно ни закрыли: ×, Esc, клик мимо
+  function close() { const m = $("#modal"); if (ui.onClose) { ui.onClose(); ui.onClose = null; } m.hidden = true; m.innerHTML = ""; }
   document.addEventListener("keydown", (e) => { if (e.key === "Escape") close(); });
 
   /* ---------- Бизнес-операции ---------- */
@@ -234,7 +236,8 @@
     if (!can("sell")) return toast("Нет права на продажу", "bad");
     const tariffs = activeTariffs("base");
     if (!tariffs.length) return toast("Сначала добавьте тарифы", "warn");
-    let sel = tariffs[Math.min(2, tariffs.length - 1)].id;
+    const fixed = tariffs.filter((t) => !t.perMinute);
+    let sel = (fixed.length ? fixed[Math.min(2, fixed.length - 1)] : tariffs[0]).id; // по умолчанию — обычный тариф, не поминутный
     modal(`<div class="dlg">
       <h2>Новое посещение</h2>
       <label class="f">Имя ребёнка</label><input class="input" id="nvName" autofocus maxlength="60" placeholder="Например, Юсуф">
@@ -424,7 +427,7 @@
     if (exit && !can("finish")) return toast("Нет права завершать посещения", "bad");
     const bills = visitBills(v), open = bills.filter((b) => b.status === "open");
     if (isOpenRate(v)) return openRatePanel(v);
-    if (open.length && !can("pay")) return toast("Есть неоплаченный счёт — нужен сотрудник с правом оплаты", "bad");
+    if ((open.length || overDue(v) > 0) && !can("pay")) return toast("Есть неоплаченный счёт — нужен сотрудник с правом оплаты", "bad");
     if (open.length && !requireShift()) return;
     const t = now(), over = Math.max(0, t - v.end), rate = overRate();
     const billsDue = open.reduce((a, b) => a + billTotal(b), 0);
@@ -453,7 +456,8 @@
         if (pay) pay.refresh();
       };
       const iv = setInterval(draw, 1000); draw();
-      $("[data-x]", m).onclick = () => { clearInterval(iv); close(); };
+      ui.onClose = () => clearInterval(iv);
+      $("[data-x]", m).onclick = close;
       const ext = $("#coExt", m); if (ext) ext.onclick = () => { close(); extendDialog(v); };
       $("#coOk", m).onclick = async (e) => {
         busy(e.target, true);
@@ -484,13 +488,14 @@
       <div class="row" style="margin-top:16px"><button class="btn big" id="coOk" style="flex:1">Подтвердить оплату и выход</button></div>
     </div>`, (m) => {
       const draw = () => {
-        if (!m.isConnected) return clearInterval(iv);
+        if (!$("#orL", m)) return clearInterval(iv);
         $("#orL", m).innerHTML = `<div class="ln"><span>На площадке</span><span>${clock(now() - v.start)}</span></div>
           <div class="ln"><span>${openMins(v)} мин × ${money(v.rate)}${qtyOf(v) > 1 ? ` × ${qtyOf(v)}` : ""}</span><span>${money(openDue(v))}</span></div>`;
         if (pay) pay.refresh();
       };
       const pay = mountPay(m, () => openDue(v), $("#orT", m));
       const iv = setInterval(draw, 1000); draw();
+      ui.onClose = () => clearInterval(iv);
       $("[data-x]", m).onclick = () => { clearInterval(iv); close(); };
       $("#coOk", m).onclick = async (e) => {
         busy(e.target, true);
@@ -751,7 +756,7 @@
   function expenseDialog() {
     const sh = myShift();
     modal(`<div class="dlg"><h2>Новый расход</h2>
-      <label class="f">Категория</label><select class="input" id="xCat">${["Хозтовары", "Аренда", "Зарплата", "Ремонт", "Реклама", "Прочее"].map((c) => `<option>${c}</option>`).join("")}</select>
+      <label class="f">Категория</label><select class="input" id="xCat">${["Хозтовары", "Аренда", "Зарплата", "Ремонт", "Реклама", "Прочее"].map((c) => `<option value="${c}">${c}</option>`).join("")}</select>
       <label class="f">Сумма, сум</label><input class="input" id="xAmt" type="number" min="1" step="1000" autofocus>
       <label class="f">Комментарий</label><input class="input" id="xCom" maxlength="120">
       <label class="f">Источник денег</label><select class="input" id="xSrc">

@@ -147,6 +147,15 @@ test("PlayPos API", { skip }, async (t) => {
     assert.equal(over.amount, 3 * 1000 * 5); // 3 начатые минуты × 1 000 × 5 детей
   });
 
+  await t.test("возврат по счёту «наличные + карта»: наличными не больше, чем ими заплатили", async () => {
+    await call(handler, owner, { op: "shift.open", openingCash: 0 });
+    const v = (await call(handler, owner, { op: "visit.create", child: "Возврат", tariffId: tariff30.id })).data;
+    await call(handler, owner, { op: "bills.pay", billIds: [v.billId], method: "mixed", cash: 1000 });
+    assert.equal((await call(handler, owner, { op: "refund.create", billId: v.billId, amount: tariff30.price, reason: "тест" })).status, 200);
+    const refs = await sql`select method, amount from refunds where bill_id = ${v.billId} order by method`;
+    assert.deepEqual(refs.map((r) => [r.method, Number(r.amount)]), [["card", tariff30.price - 1000], ["cash", 1000]]);
+  });
+
   await t.test("площадки изолированы: чужие данные не видны и не меняются", async () => {
     const [tb] = await sql`insert into tenants (name) values ('B') returning id`;
     const { default: bcrypt } = await import("bcryptjs");
