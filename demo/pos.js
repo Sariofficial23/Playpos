@@ -849,7 +849,7 @@
         <div class="logo">${logoMark()}<span>Play<b>Pos</b></span></div>
         ${NAV.filter((n) => !n[3] || can(n[3])).map((n) => `<a class="nav ${ui.route === n[0] ? "on" : ""}" href="#${n[0]}"><span class="em">${n[1]}</span>${n[2]}</a>`).join("")}
         <div class="who"><b>${esc(u.name)}</b>${ROLES[u.role].name}<br>${sh ? `Смена №${sh.no}, открыта в ${hm(sh.openedAt)}` : "Смена не открыта"}
-          <div class="row" style="margin-top:8px">${PPI18N.switcher()}</div></div>
+          <div class="row" style="margin-top:8px">${PPI18N.switcher()}${ui.update && ui.update.current ? `<small style="margin-left:auto;opacity:.7">v${esc(ui.update.current)}</small>` : ""}</div></div>
       </aside>
       <main class="main">
         <div class="top"><button class="btn sm ghost menu-btn" id="menu">☰</button><h1>${title}</h1>${actions}</div>

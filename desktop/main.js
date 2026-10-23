@@ -1,6 +1,7 @@
 // PlayPos для Windows: касса, сервер и база данных на одном компьютере, работает без интернета.
 import { app, BrowserWindow, Menu, dialog, ipcMain, session, shell } from "electron";
 import path from "node:path";
+import fs from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { startCore } from "./core.js";
 import { listPrinters } from "./printers.js";
@@ -109,6 +110,12 @@ app.whenReady().then(async () => {
     callback(details.deviceList[0] ? details.deviceList[0].deviceId : "");
   });
   if (app.isPackaged) app.setLoginItemSettings({ openAtLogin: true }); // касса стартует вместе с Windows
+  // Программа обновилась — очищаем кэш окна, чтобы касса сразу открылась новой версией
+  const verFile = path.join(app.getPath("userData"), "last-version.txt");
+  if ((await fs.readFile(verFile, "utf8").catch(() => "")) !== app.getVersion()) {
+    await ses.clearCache().catch(() => {});
+    await fs.writeFile(verFile, app.getVersion()).catch(() => {});
+  }
   updater = initUpdater({ app, send: (s) => { if (win && !win.isDestroyed()) win.webContents.send("update", s); } });
   buildMenu();
   createWindow();
