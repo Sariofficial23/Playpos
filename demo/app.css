@@ -252,3 +252,9 @@ tfoot td { border-top: 2px solid var(--line); border-bottom: 0; }
 /* Время вышло, кассир нажал «Продолжить»: спокойная строка без мигания, доплата растёт */
 .lrow.bad.going, .card.bad.going { animation: none; }
 .vipcost.over { background: var(--danger-bg); color: #8d1422; }
+
+/* Группа детей одним посещением */
+.qty { display: flex; gap: 8px; align-items: center; }
+.qty .btn { width: 52px; height: 48px; font-size: 24px; padding: 0; }
+.qty .input { width: 90px; text-align: center; font-size: 20px; font-weight: 900; }
+.qtag { display: inline-block; margin-left: 6px; padding: 1px 8px; border-radius: 99px; background: var(--accent); color: #3b2a00; font-size: 12px; font-weight: 900; vertical-align: middle; }

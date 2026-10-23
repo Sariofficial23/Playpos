@@ -48,6 +48,8 @@
     "Обновить PlayPos сейчас? Программа закроется примерно на минуту и откроется снова. Данные сохранятся.": "PlayPos hozir yangilansinmi? Dastur taxminan bir daqiqaga yopiladi va qayta ochiladi. Ma'lumotlar saqlanadi.",
     "Сохраняем резервную копию и устанавливаем обновление…": "Zaxira nusxa saqlanmoqda va yangilanish o'rnatilmoqda…",
     "Когда компьютер подключён к интернету, PlayPos сам проверяет обновления каждые 4 часа и скачивает их в фоне. Установка — по кнопке «Обновить сейчас» или автоматически при закрытии программы.": "Kompyuter internetga ulanganda PlayPos har 4 soatda yangilanishlarni o'zi tekshiradi va fonda yuklab oladi. O'rnatish — «Hozir yangilash» tugmasi orqali yoki dastur yopilganda avtomatik.",
+    // Группа детей
+    "Количество детей": "Bolalar soni", "детей": "bola", "Детей": "Bolalar", "Детей в группе": "Guruhdagi bolalar", "Меньше": "Kamroq", "Больше": "Ko'proq", "Проверьте поле «Количество детей»": "«Bolalar soni» maydonini tekshiring",
     // Сотрудник в настройках
     "Сотрудник": "Xodim", "Выйти из кассы": "Kassadan chiqish", "🌐 Сайт PlayPos": "🌐 PlayPos sayti", "смена №": "smena №", "смена не открыта": "smena ochilmagan", "открыта в": "ochilgan:",
     "Выход нужен при смене кассира: следующий сотрудник входит своим логином. Дети на площадке и таймеры при этом не останавливаются.": "Chiqish kassir almashganda kerak: keyingi xodim o'z logini bilan kiradi. Maydonchadagi bolalar va taymerlar to'xtamaydi.",

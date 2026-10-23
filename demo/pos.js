@@ -129,7 +129,9 @@
   // Поминутный тариф (VIP): каждая начатая минута по цене на момент входа, оплата при выходе
   const isOpenRate = (v) => v.rate != null && !v.exitAt;
   const openMins = (v) => Math.max(1, Math.ceil((now() - v.start) / MIN));
-  const openDue = (v) => openMins(v) * v.rate;
+  const qtyOf = (v) => v.qty || 1; // детей в группе
+  const qtyTag = (v) => (qtyOf(v) > 1 ? ` <span class="qtag" title="Детей в группе">👧×${qtyOf(v)}</span>` : "");
+  const openDue = (v) => openMins(v) * v.rate * qtyOf(v);
   const timerText = (v) => (isOpenRate(v) ? clock(now() - v.start)
     : status(v) !== "bad" ? clock(v.end - now()) : v.overFrom ? "+" + clock(Math.max(0, now() - overStart(v))) : "⏸ 00:00");
   // «Продолжить» доступно, когда время вышло, решение не принято и задана цена минуты
@@ -165,7 +167,7 @@
   const overStart = (v) => Math.max(v.end, v.overFrom || 0);
   const overMins = (v) => (v.rate == null && !v.exitAt && v.overFrom && now() > overStart(v) ? Math.ceil((now() - overStart(v)) / MIN) : 0);
   const waiting = (v) => v.rate == null && !v.exitAt && !v.overFrom && now() >= v.end; // время вышло, кассир ещё не решил
-  const overDue = (v) => overMins(v) * overRate();
+  const overDue = (v) => overMins(v) * overRate() * qtyOf(v);
   const tariffPrice = (t) => (t.perMinute ? money(t.price) + "/мин" : money(t.price));
   function status(v) {
     if (v.exitAt) return "done";
@@ -223,7 +225,7 @@
     return false;
   }
 
-  const createVisit = (child, tariff) => act("visit.create", { child, tariffId: tariff.id });
+  const createVisit = (child, tariff, qty) => act("visit.create", { child, tariffId: tariff.id, qty });
   const extendVisit = (v, tariff, from) => act("visit.extend", { visitId: v.id, tariffId: tariff.id, from });
   const busy = (btn, on) => { if (btn) btn.disabled = on; };
 
@@ -236,6 +238,8 @@
     modal(`<div class="dlg">
       <h2>Новое посещение</h2>
       <label class="f">Имя ребёнка</label><input class="input" id="nvName" autofocus maxlength="60" placeholder="Например, Юсуф">
+      <label class="f">Количество детей</label>
+      <div class="qty" id="nvQ"><button class="btn ghost" type="button" data-q="-1" aria-label="Меньше">−</button><input class="input" id="nvQty" type="number" min="1" max="50" value="1"><button class="btn ghost" type="button" data-q="1" aria-label="Больше">+</button></div>
       <label class="f">Тариф</label><div class="picks" id="nvT"></div>
       <div class="summary" id="nvSum"></div>
       <div class="foot">
@@ -243,27 +247,33 @@
         <button class="btn alt" id="nvStart">Начать, оплата при выходе</button>
         <button class="btn" id="nvPay">Начать и оплатить</button>
       </div></div>`, (m) => {
+      let qty = 1;
       const draw = () => {
         $("#nvT", m).innerHTML = tariffs.map((t) => `<button class="pick ${t.id === sel ? "on" : ""}" data-t="${t.id}"><b>${esc(t.name)}</b><small>${tariffPrice(t)}</small></button>`).join("");
         const t = tariffs.find((x) => x.id === sel);
+        const times = qty > 1 ? ` × ${qty} ${PPI18N.tr("детей")}` : "";
         $("#nvSum", m).innerHTML = t.perMinute
-          ? `Начало: <b>${hm(now())}</b> · поминутно: <b>${money(t.price)}</b> за минуту<br>Сумма посчитается при выходе по фактическому времени.`
-          : `Начало: <b>${hm(now())}</b> · окончание: <b>${hm(now() + t.minutes * MIN)}</b><br>К оплате: <b>${money(t.price)}</b>`;
+          ? `Начало: <b>${hm(now())}</b> · поминутно: <b>${money(t.price)}</b> за минуту${times}${qty > 1 ? ` = <b>${money(t.price * qty)}</b>/мин` : ""}<br>Сумма посчитается при выходе по фактическому времени.`
+          : `Начало: <b>${hm(now())}</b> · окончание: <b>${hm(now() + t.minutes * MIN)}</b><br>К оплате: ${qty > 1 ? `${money(t.price)}${times} = ` : ""}<b>${money(t.price * qty)}</b>`;
         $("#nvPay", m).style.display = t.perMinute ? "none" : "";
       };
       draw();
       $("#nvT", m).onclick = (e) => { const b = e.target.closest("[data-t]"); if (b) { sel = b.dataset.t; draw(); } };
+      const setQty = (n) => { qty = Math.min(50, Math.max(1, Math.round(n) || 1)); $("#nvQty", m).value = qty; draw(); };
+      $("#nvQ", m).onclick = (e) => { const b = e.target.closest("[data-q]"); if (b) setQty(qty + +b.dataset.q); };
+      $("#nvQty", m).oninput = (e) => { if (e.target.value !== "") setQty(+e.target.value); };
+      $("#nvQty", m).onblur = () => setQty(qty);
       $("[data-x]", m).onclick = close;
       const go = async (pay, btn) => {
         const name = $("#nvName", m).value.trim();
         if (!name) return toast("Введите имя ребёнка", "bad");
         if (pay && !requireShift()) return;
         busy(btn, true);
-        const out = await createVisit(name, tariffs.find((x) => x.id === sel));
+        const out = await createVisit(name, tariffs.find((x) => x.id === sel), qty);
         busy(btn, false);
         if (!out) return;
         close();
-        toast(`${esc(name)}: таймер запущен`);
+        toast(`${esc(name)}${qty > 1 ? ` (${qty} ${PPI18N.tr("детей")})` : ""}: таймер запущен`);
         if (pay) payDialog(S.bills.filter((b) => b.id === out.billId));
       };
       $("#nvStart", m).onclick = (e) => go(false, e.target);
@@ -288,12 +298,13 @@
       <div class="foot"><button class="btn ghost" data-x>Отмена</button><button class="btn alt" id="exOk">Продлить</button><button class="btn" id="exPay">Продлить и оплатить</button></div>
     </div>`, (m) => {
       const draw = () => {
-        $("#exT", m).innerHTML = tariffs.map((t) => `<button class="pick ${t.id === sel ? "on" : ""}" data-t="${t.id}"><b>+${t.minutes} мин</b><small>${money(t.price)}</small></button>`).join("");
+        $("#exT", m).innerHTML = tariffs.map((t) => `<button class="pick ${t.id === sel ? "on" : ""}" data-t="${t.id}"><b>+${t.minutes} мин</b><small>${money(t.price * qtyOf(v))}</small></button>`).join("");
         const t = tariffs.find((x) => x.id === sel);
         const base = from === "now" ? Math.max(now(), v.end) : v.end;
         const ob = openBills(v)[0];
-        const due = openBills(v).reduce((a, b) => a + billTotal(b), 0) + t.price;
-        $("#exSum", m).innerHTML = `Новое окончание: <b>${hm(base + t.minutes * MIN)}</b><br>Доплата за продление: <b>+${money(t.price)}</b><br>` +
+        const price = t.price * qtyOf(v);
+        const due = openBills(v).reduce((a, b) => a + billTotal(b), 0) + price;
+        $("#exSum", m).innerHTML = `Новое окончание: <b>${hm(base + t.minutes * MIN)}</b><br>Доплата за продление: ${qtyOf(v) > 1 ? `${money(t.price)} × ${qtyOf(v)} ${PPI18N.tr("детей")} = ` : ""}<b>+${money(price)}</b><br>` +
           (ob ? `Добавится в открытый счёт №${ob.no}. Итого к оплате: <b>${money(due)}</b>` : `Прошлый счёт оплачен — создастся новый счёт на доплату.`);
         if (overdue) m.querySelectorAll("#exF button").forEach((b) => b.classList.toggle("on", b.dataset.f === from));
       };
@@ -310,7 +321,7 @@
         if (!out) return;
         delete ui.notified[v.id + "w"]; delete ui.notified[v.id + "e"];
         close();
-        toast(`${esc(v.child)}: +${t.minutes} мин, +${money(t.price)}`);
+        toast(`${esc(v.child)}: +${t.minutes} мин, +${money(t.price * qtyOf(v))}`);
         const nv = S.visits.find((x) => x.id === v.id);
         if (pay && nv) payDialog(openBills(nv));
       };
@@ -436,7 +447,7 @@
       // Сумма просрочки растёт, пока панель открыта; окончательно её считает сервер при подтверждении
       const draw = () => {
         if (!m.isConnected || !$("#ovT", m)) return clearInterval(iv);
-        $("#ovT", m).textContent = `${PPI18N.tr("Просрочка")}: ${overMins(v)} ${PPI18N.tr("мин")} × ${money(rate)}`;
+        $("#ovT", m).textContent = `${PPI18N.tr("Просрочка")}: ${overMins(v)} ${PPI18N.tr("мин")} × ${money(rate)}${qtyOf(v) > 1 ? ` × ${qtyOf(v)}` : ""}`;
         $("#ovA", m).textContent = money(overDue(v));
         if (pay) pay.refresh();
       };
@@ -474,7 +485,7 @@
       const draw = () => {
         if (!m.isConnected) return clearInterval(iv);
         $("#orL", m).innerHTML = `<div class="ln"><span>На площадке</span><span>${clock(now() - v.start)}</span></div>
-          <div class="ln"><span>${openMins(v)} мин × ${money(v.rate)}</span><span>${money(openDue(v))}</span></div>`;
+          <div class="ln"><span>${openMins(v)} мин × ${money(v.rate)}${qtyOf(v) > 1 ? ` × ${qtyOf(v)}` : ""}</span><span>${money(openDue(v))}</span></div>`;
         if (pay) pay.refresh();
       };
       const pay = mountPay(m, () => openDue(v), $("#orT", m));
@@ -608,7 +619,7 @@
     sendToPrinter([
       R.title(S.settings.venue), R.center(`Чек № ${bills.map((b) => b.no).join(", ")}`),
       R.center(`${new Date(b0.paidAt).toLocaleDateString("ru-RU", { timeZone: TZ })} ${hm(b0.paidAt)}`), R.hr(),
-      R.row("Ребёнок", v.child || ""), ...(v.start ? [R.row("Время", hm(v.start) + "–" + hm(v.end))] : []), R.hr(),
+      R.row("Ребёнок", v.child || ""), ...(qtyOf(v) > 1 ? [R.row("Детей", String(qtyOf(v)))] : []), ...(v.start ? [R.row("Время", hm(v.start) + "–" + hm(v.end))] : []), R.hr(),
       ...bills.flatMap((b) => b.items).map((i) => R.row(i.title, money(i.amount))),
       ...(disc ? [R.row("Скидка", "−" + money(disc))] : []), R.hr(),
       R.big("ИТОГО", money(total)),
@@ -625,7 +636,7 @@
     const unpaid = bills.some((b) => b.status === "open");
     sendToPrinter([
       R.title(S.settings.venue), R.center(`Талон посещения №${v.no}`), R.hr(),
-      R.row("Ребёнок", v.child), R.row("Дата", new Date(v.start).toLocaleDateString("ru-RU", { timeZone: TZ })),
+      R.row("Ребёнок", v.child), ...(qtyOf(v) > 1 ? [R.row("Детей", String(qtyOf(v)))] : []), R.row("Дата", new Date(v.start).toLocaleDateString("ru-RU", { timeZone: TZ })),
       R.row("Начало", hm(v.start)), ...(isOpenRate(v) ? [R.row("Тариф", `${v.tariffName}, ${money(v.rate)}/мин`), R.row("Оплата", "при выходе")] : [R.row("Окончание", hm(v.end)), R.row("Тариф", v.tariffName)]), R.hr(),
       ...bills.flatMap((b) => [R.text(`Счёт №${b.no}`), ...b.items.map((i) => R.row(i.title, money(i.amount))), R.row("Итого", money(billTotal(b))),
         ...(b.status === "paid" ? [R.row("Оплачено", paidHow(b) + " " + dt(b.paidAt)), R.row("Кассир", staffName(b.paidBy))] : [R.row("Статус", "НЕ ОПЛАЧЕН")]), R.hr()]),
@@ -845,7 +856,7 @@
     const label = { ok: "Играет", warn: "Скоро заканчивается", bad: v.overFrom ? "Продолжает по минутам" : "Время вышло — таймер остановлен", vip: "Поминутно" }[st];
     const cont = canContinue(v), going = !!v.overFrom && !v.exitAt;
     return `<div class="card ${st}${going ? " going" : ""}" data-v="${v.id}">
-      <div class="head"><h3>${esc(v.child)}</h3>${vip ? `<span class="chip vip">при выходе</span>` : `<span class="chip ${paid ? "paid" : "open"}">${paid ? "✓ оплачен" : "● не оплачен"}</span>`}</div>
+      <div class="head"><h3>${esc(v.child)}${qtyTag(v)}</h3>${vip ? `<span class="chip vip">при выходе</span>` : `<span class="chip ${paid ? "paid" : "open"}">${paid ? "✓ оплачен" : "● не оплачен"}</span>`}</div>
       <div class="time" data-t="${v.id}">${timerText(v)}</div>
       <div class="st">${label}${vip ? ` · <span class="vipsum" data-s="${v.id}">${money(openDue(v))}</span>` : going ? ` · <span class="vipsum" data-s="${v.id}">${money(overDue(v))}</span>` : ""}</div>
       <div class="meta">${vip ? `вход ${hm(v.start)} · ${esc(v.tariffName)} · ${money(v.rate)}/мин` : `${hm(v.start)} → ${hm(v.end)} · ${esc(v.tariffName)}${v.ext.length ? ` · продлений: ${v.ext.length}` : ""}`}</div>
@@ -877,7 +888,7 @@
     const cont = canContinue(v), going = !!v.overFrom && !v.exitAt;
     return `<div class="lrow ${st}${going ? " going" : ""}" data-v="${v.id}">
       <span class="dot"></span>
-      <div class="nm"><b>${esc(v.child)}</b><small><span class="cl">${going ? "Продолжает" : waiting(v) ? "Время вышло · ждёт решения" : CATS.find((c) => c[0] === st)[1]}</span> · ${vip
+      <div class="nm"><b>${esc(v.child)}${qtyTag(v)}</b><small><span class="cl">${going ? "Продолжает" : waiting(v) ? "Время вышло · ждёт решения" : CATS.find((c) => c[0] === st)[1]}</span> · ${vip
         ? `${hm(v.start)} → · ${esc(v.tariffName)} · ${money(v.rate)}/мин`
         : `${hm(v.start)}–${hm(v.end)} · ${esc(v.tariffName)}${v.ext.length ? " · +" + v.ext.length : ""}`}</small></div>
       <div class="tm" data-t="${v.id}">${timerText(v)}</div>
@@ -939,7 +950,7 @@
       `<button class="btn ghost sm" id="snd">${ui.soundCtx && S.settings.sound ? "🔔 Звук включён" : "🔕 Включить звук"}</button>${can("sell") ? `<button class="btn" id="nv">＋ Новое посещение</button>` : ""}`,
       `${licenseBanner()}${updateBanner()}${!myShift() && can("shift") ? `<div class="banner">Смена не открыта — оплату принять нельзя.<button class="btn sm" id="os">Открыть смену</button></div>` : ""}
       <div class="stats">
-        <div class="stat"><small>Детей на площадке</small><b>${active.length}</b></div>
+        <div class="stat"><small>Детей на площадке</small><b>${active.reduce((a, v) => a + qtyOf(v), 0)}</b></div>
         <div class="stat"><small>Просрочено</small><b style="color:${over ? "var(--danger)" : "inherit"}">${over}</b></div>
         <div class="stat"><small>Не оплачено</small><b>${money(unpaid)}</b></div>
         <div class="stat"><small>Получено сегодня</small><b>${can("reports") ? money(paidToday) : "—"}</b></div>
@@ -979,7 +990,7 @@
     const rows = [...S.visits].sort((a, b) => b.start - a.start).map((v) => {
       const st = status(v), sum = visitBills(v).reduce((a, b) => a + billTotal(b), 0), paid = openBills(v).length === 0;
       const vip = isOpenRate(v);
-      return `<tr><td>№${v.no}</td><td><b>${esc(v.child)}</b></td><td>${dt(v.start)}</td><td>${vip ? "поминутно" : hm(v.end)}</td><td>${v.exitAt ? hm(v.exitAt) : "—"}</td>
+      return `<tr><td>№${v.no}</td><td><b>${esc(v.child)}</b>${qtyTag(v)}</td><td>${dt(v.start)}</td><td>${vip ? "поминутно" : hm(v.end)}</td><td>${v.exitAt ? hm(v.exitAt) : "—"}</td>
         <td>${st === "done" ? `<span class="tag grey">завершено</span>` : st === "bad" ? `<span class="tag red">просрочено</span>` : `<span class="tag green">на площадке</span>`}</td>
         <td class="num">${money(vip ? openDue(v) : sum)}</td><td>${vip ? `<span class="tag grey">при выходе</span>` : paid ? `<span class="tag green">оплачен</span><br><small>${[...new Set(visitBills(v).map((b) => methodName(b.method)))].join(", ")}</small>` : `<span class="tag red">открыт</span>`}</td>
         <td>${can("print") ? `<button class="btn sm ghost" data-p="${v.id}">Талон</button>` : ""}</td></tr>`;
