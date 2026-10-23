@@ -179,6 +179,20 @@
     });
   }
 
+  // Код сброса пароля владельца — продиктовать клиенту по телефону или отправить в мессенджер
+  function resetCodeModal(c, code) {
+    const pretty = code.slice(0, 4) + " " + code.slice(4);
+    const text = `PlayPos — сброс пароля владельца\n\n1. Откройте программу PlayPos, на экране входа нажмите «Забыли пароль владельца?».\n2. Введите код: ${pretty}\n3. Придумайте новый пароль (минимум 6 символов).\n\nКод одноразовый и действует 24 часа. Нужен интернет.`;
+    modal(`<div class="dlg"><h2>Код сброса — ${esc(c.venue)}</h2>
+      <div class="summary" style="text-align:center;font-size:34px;font-weight:900;letter-spacing:4px">${pretty}</div>
+      <p style="color:var(--muted)">Код показывается один раз. Если потеряли — выдайте новый, старый перестанет работать.</p>
+      <textarea class="input" id="cr" rows="7" style="width:100%;font-family:monospace;font-size:13px">${esc(text)}</textarea>
+      <div class="foot"><button class="btn ghost" data-x>Закрыть</button><button class="btn" id="cp">Скопировать</button></div></div>`, (m) => {
+      $("[data-x]", m).onclick = close;
+      $("#cp", m).onclick = async () => { try { await navigator.clipboard.writeText($("#cr", m).value); toast("Скопировано"); } catch (e) { $("#cr", m).select(); } };
+    });
+  }
+
   function extendDialog(c) {
     let period = "1";
     const st = stateOf(c);
@@ -214,7 +228,7 @@
       <label class="f">Заметки</label><input class="input" id="uN" value="${esc(c.note)}" maxlength="500">
       <div class="row" style="margin-top:14px">
         <button class="btn sm" id="uExt">Продлить</button>
-        ${c.deviceBound ? `<button class="btn sm ghost" id="uUnb">Отвязать компьютер</button>` : ""}
+        ${c.deviceBound ? `<button class="btn sm ghost" id="uUnb">Отвязать компьютер</button><button class="btn sm ghost" id="uRst">Сбросить пароль владельца</button>` : ""}
         <button class="btn sm ${c.active ? "danger" : ""}" id="uAct">${c.active ? "Отключить доступ" : "Включить доступ"}</button>
       </div>
       <h3 style="margin:18px 0 6px">История оплат</h3>
@@ -224,6 +238,12 @@
       $("[data-x]", m).onclick = close;
       $("#gen", m).onclick = () => ($("#uW", m).value = genPass());
       $("#uExt", m).onclick = () => extendDialog(c);
+      const rst = $("#uRst", m);
+      if (rst) rst.onclick = async () => {
+        if (!confirm("Выдать одноразовый код сброса пароля владельца? Код действует 24 часа и только на компьютере этого клиента.")) return;
+        const out = await act("admin.ownerReset", { id: c.id });
+        if (out && out.code) resetCodeModal(c, out.code);
+      };
       const unb = $("#uUnb", m);
       if (unb) unb.onclick = async () => { if (confirm("Отвязать программу от компьютера клиента? Клиент сможет активировать её на новом компьютере тем же логином.")) { if (await act("admin.clientUnbind", { id: c.id }, "Компьютер отвязан")) close(); } };
       $("#uAct", m).onclick = async () => {

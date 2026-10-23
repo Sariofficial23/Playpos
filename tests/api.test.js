@@ -204,6 +204,16 @@ test("PlayPos API", { skip }, async (t) => {
     const ext = await call(handler, adm, { op: "admin.clientExtend", id: clientId, period: "1", amount: 300000 });
     assert.equal(new Date(ext.data.until).toLocaleDateString("en-CA", { timeZone: "Asia/Tashkent" }), "2027-02-28"); // 31 янв + 1 мес = последний день февраля
     // обновление лицензии и отключение доступа
+    // сброс пароля владельца: код из админки, только с компьютера клиента, одноразовый, 5 попыток
+    const dev = { clientId, deviceId: "device-AAAA", deviceKey: act.data.deviceKey };
+    assert.equal((await call(handler, null, { op: "admin.ownerReset", id: clientId })).status, 401);
+    const rc = (await call(handler, adm, { op: "admin.ownerReset", id: clientId })).data.code;
+    assert.match(rc, /^\d{8}$/);
+    assert.equal((await call(handler, null, { op: "license.ownerReset", ...dev, deviceId: "device-BBBB", code: rc })).status, 403);
+    const wrong = (await call(handler, null, { op: "license.ownerReset", ...dev, code: "00000000" })).data;
+    assert.deepEqual(wrong, { ok: false, left: 4 });
+    assert.deepEqual((await call(handler, null, { op: "license.ownerReset", ...dev, code: rc.slice(0, 4) + " " + rc.slice(4) })).data, { ok: true });
+    assert.equal((await call(handler, null, { op: "license.ownerReset", ...dev, code: rc })).status, 400); // второй раз не работает
     const ref = await call(handler, null, { op: "license.refresh", clientId, deviceId: "device-AAAA", deviceKey: act.data.deviceKey });
     assert.equal(ref.status, 200);
     await call(handler, adm, { op: "admin.clientActive", id: clientId, active: false });

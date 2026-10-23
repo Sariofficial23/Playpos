@@ -826,7 +826,8 @@
       <div style="float:right;margin-top:6px">${PPI18N.switcher()}</div><h2 style="margin:18px 0 6px">Вход сотрудника</h2>
       <label style="${lbl}">Логин</label><input class="input" id="ll" autocomplete="username" autocapitalize="off" spellcheck="false" style="width:100%" autofocus>
       <label style="${lbl}">PIN / пароль</label><input class="input" id="lp" type="password" autocomplete="current-password" style="width:100%">
-      <button class="btn big" id="lgo">Войти</button></div></div>`;
+      <button class="btn big" id="lgo">Войти</button>
+      ${desktop() ? `<button class="btn ghost sm" id="lfg" style="margin-top:12px">Забыли пароль владельца?</button>` : ""}</div></div>`;
     const go = async () => {
       const b = $("#lgo");
       if (!$("#ll").value.trim() || !$("#lp").value) return toast("Введите логин и пароль", "bad");
@@ -835,9 +836,34 @@
       catch (e) { toast(esc(PPI18N.tr(e.message)), "bad"); busy(b, false); }
     };
     $("#lgo").onclick = go;
+    const fg = $("#lfg"); if (fg) fg.onclick = ownerResetDialog;
     $("#lp").onkeydown = (e) => { if (e.key === "Enter") go(); };
     $("#ll").onkeydown = (e) => { if (e.key === "Enter") $("#lp").focus(); };
     $("#ll").focus();
+  }
+
+  // Сброс пароля владельца по одноразовому коду из PlayPos (только программа для Windows, нужен интернет)
+  function ownerResetDialog() {
+    modal(`<div class="dlg"><h2>Сброс пароля владельца</h2>
+      <p class="note">Позвоните в PlayPos — вам продиктуют одноразовый код (8 цифр). Сотрудникам пароль меняет владелец в «Сотрудниках».</p>
+      <label class="f">Код из PlayPos</label><input class="input" id="rsCode" inputmode="numeric" maxlength="12" autocomplete="off" autofocus>
+      <label class="f">Новый пароль владельца</label><input class="input" id="rsP1" type="password" autocomplete="new-password" minlength="6">
+      <label class="f">Повторите пароль</label><input class="input" id="rsP2" type="password" autocomplete="new-password">
+      <div class="foot"><button class="btn ghost" data-x>Отмена</button><button class="btn" id="rsOk">Сменить пароль</button></div></div>`, (m) => {
+      $("[data-x]", m).onclick = close;
+      $("#rsOk", m).onclick = async (e) => {
+        const code = $("#rsCode", m).value.replace(/\s+/g, ""), p1 = $("#rsP1", m).value, p2 = $("#rsP2", m).value;
+        if (!/^\d{8}$/.test(code)) return toast("Код — 8 цифр", "bad");
+        if (p1.length < 6) return toast("Пароль — минимум 6 символов", "bad");
+        if (p1 !== p2) return toast("Пароли не совпадают", "bad");
+        busy(e.target, true);
+        try {
+          const out = await api("owner.reset", { code, password: p1 });
+          close(); viewLogin(); $("#ll").value = out.login; $("#lp").focus();
+          toast(`${PPI18N.tr("Пароль владельца изменён. Логин")}: ${esc(out.login)}`);
+        } catch (err) { toast(esc(PPI18N.tr(err.message)), "bad"); busy(e.target, false); }
+      };
+    });
   }
 
   const logoMark = () => `<span class="logo-mark"><svg width="18" height="20" viewBox="0 0 18 20"><path d="M3 2.5c0-1.2 1.3-1.9 2.3-1.3l11 7.5c.9.6.9 2 0 2.6l-11 7.5C4.3 19.4 3 18.7 3 17.5z" fill="#fff"/></svg></span>`;

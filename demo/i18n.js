@@ -48,6 +48,13 @@
     "Обновить PlayPos сейчас? Программа закроется примерно на минуту и откроется снова. Данные сохранятся.": "PlayPos hozir yangilansinmi? Dastur taxminan bir daqiqaga yopiladi va qayta ochiladi. Ma'lumotlar saqlanadi.",
     "Сохраняем резервную копию и устанавливаем обновление…": "Zaxira nusxa saqlanmoqda va yangilanish o'rnatilmoqda…",
     "Когда компьютер подключён к интернету, PlayPos сам проверяет обновления каждые 4 часа и скачивает их в фоне. Установка — по кнопке «Обновить сейчас» или автоматически при закрытии программы.": "Kompyuter internetga ulanganda PlayPos har 4 soatda yangilanishlarni o'zi tekshiradi va fonda yuklab oladi. O'rnatish — «Hozir yangilash» tugmasi orqali yoki dastur yopilganda avtomatik.",
+    // Сброс пароля владельца
+    "Забыли пароль владельца?": "Egasining parolini unutdingizmi?", "Сброс пароля владельца": "Ega parolini tiklash", "Код из PlayPos": "PlayPos kodi", "Новый пароль владельца": "Egasining yangi paroli",
+    "Повторите пароль": "Parolni takrorlang", "Сменить пароль": "Parolni almashtirish", "Код — 8 цифр": "Kod — 8 ta raqam", "Пароль — минимум 6 символов": "Parol — kamida 6 belgi", "Пароли не совпадают": "Parollar mos kelmadi",
+    "Пароль владельца изменён. Логин": "Ega paroli o'zgartirildi. Login",
+    "Позвоните в PlayPos — вам продиктуют одноразовый код (8 цифр). Сотрудникам пароль меняет владелец в «Сотрудниках».": "PlayPos'ga qo'ng'iroq qiling — sizga bir martalik kod (8 raqam) aytiladi. Xodimlar parolini ega «Xodimlar» bo'limida almashtiradi.",
+    "Нет связи с сервером PlayPos. Для сброса пароля нужен интернет": "PlayPos serveri bilan aloqa yo'q. Parolni tiklash uchun internet kerak",
+    "Код недействителен. Попросите в PlayPos новый код": "Kod yaroqsiz. PlayPos'dan yangi kod so'rang", "Неверный код. Осталось попыток:": "Kod noto'g'ri. Qolgan urinishlar:",
     // Группа детей
     "Тарифы «только продление» здесь не показываются — они в кнопке «Продлить».": "«Faqat uzaytirish» tariflari bu yerda ko'rinmaydi — ular «Uzaytirish» tugmasida.",
     "«Только вход» — тариф виден только в «Новом посещении», «Только продление» — только в «Продлить».": "«Faqat kirish» — tarif faqat «Yangi tashrif»da, «Faqat uzaytirish» — faqat «Uzaytirish»da ko'rinadi.",

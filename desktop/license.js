@@ -73,7 +73,15 @@ export async function createLicense({ dir, serverUrl, appVersion }) {
     await save();
   }
 
+  // Код сброса пароля владельца из админ-панели PlayPos: проверяется на сервере, нужен интернет
+  async function ownerReset(code) {
+    const p = payload();
+    if (!p || !st.deviceKey) throw new Error("Программа не активирована");
+    try { return await remote("license.ownerReset", { clientId: p.clientId, deviceId: st.deviceId, deviceKey: st.deviceKey, code }); }
+    catch (e) { if (!e.status) throw new Error("Нет связи с сервером PlayPos. Для сброса пароля нужен интернет"); throw e; }
+  }
+
   refresh();
   const timer = setInterval(refresh, REFRESH_MS);
-  return { status, activate, refresh, deviceId: st.deviceId, stop: () => clearInterval(timer) };
+  return { status, activate, refresh, ownerReset, deviceId: st.deviceId, stop: () => clearInterval(timer) };
 }
