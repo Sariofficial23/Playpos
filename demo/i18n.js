@@ -49,6 +49,8 @@
     "Сохраняем резервную копию и устанавливаем обновление…": "Zaxira nusxa saqlanmoqda va yangilanish o'rnatilmoqda…",
     "Когда компьютер подключён к интернету, PlayPos сам проверяет обновления каждые 4 часа и скачивает их в фоне. Установка — по кнопке «Обновить сейчас» или автоматически при закрытии программы.": "Kompyuter internetga ulanganda PlayPos har 4 soatda yangilanishlarni o'zi tekshiradi va fonda yuklab oladi. O'rnatish — «Hozir yangilash» tugmasi orqali yoki dastur yopilganda avtomatik.",
     // Группа детей
+    "Тарифы «только продление» здесь не показываются — они в кнопке «Продлить».": "«Faqat uzaytirish» tariflari bu yerda ko'rinmaydi — ular «Uzaytirish» tugmasida.",
+    "«Только вход» — тариф виден только в «Новом посещении», «Только продление» — только в «Продлить».": "«Faqat kirish» — tarif faqat «Yangi tashrif»da, «Faqat uzaytirish» — faqat «Uzaytirish»da ko'rinadi.",
     "Количество детей": "Bolalar soni", "детей": "bola", "Детей": "Bolalar", "Детей в группе": "Guruhdagi bolalar", "Меньше": "Kamroq", "Больше": "Ko'proq", "Проверьте поле «Количество детей»": "«Bolalar soni» maydonini tekshiring",
     // Сотрудник в настройках
     "Сотрудник": "Xodim", "Выйти из кассы": "Kassadan chiqish", "🌐 Сайт PlayPos": "🌐 PlayPos sayti", "смена №": "smena №", "смена не открыта": "smena ochilmagan", "открыта в": "ochilgan:",

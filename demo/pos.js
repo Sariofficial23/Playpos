@@ -241,6 +241,7 @@
       <label class="f">Количество детей</label>
       <div class="qty" id="nvQ"><button class="btn ghost" type="button" data-q="-1" aria-label="Меньше">−</button><input class="input" id="nvQty" type="number" min="1" max="50" value="1"><button class="btn ghost" type="button" data-q="1" aria-label="Больше">+</button></div>
       <label class="f">Тариф</label><div class="picks" id="nvT"></div>
+      ${S.tariffs.some((t) => !t.archived && t.use === "ext") ? `<p class="note">Тарифы «только продление» здесь не показываются — они в кнопке «Продлить».</p>` : ""}
       <div class="summary" id="nvSum"></div>
       <div class="foot">
         <button class="btn ghost" data-x>Отмена</button>
@@ -298,7 +299,7 @@
       <div class="foot"><button class="btn ghost" data-x>Отмена</button><button class="btn alt" id="exOk">Продлить</button><button class="btn" id="exPay">Продлить и оплатить</button></div>
     </div>`, (m) => {
       const draw = () => {
-        $("#exT", m).innerHTML = tariffs.map((t) => `<button class="pick ${t.id === sel ? "on" : ""}" data-t="${t.id}"><b>+${t.minutes} мин</b><small>${money(t.price * qtyOf(v))}</small></button>`).join("");
+        $("#exT", m).innerHTML = tariffs.map((t) => `<button class="pick ${t.id === sel ? "on" : ""}" data-t="${t.id}"><b>+${t.minutes} мин</b><small>${esc(t.name)} · ${money(t.price * qtyOf(v))}</small></button>`).join("");
         const t = tariffs.find((x) => x.id === sel);
         const base = from === "now" ? Math.max(now(), v.end) : v.end;
         const ob = openBills(v)[0];
@@ -722,6 +723,7 @@
         <option value="base" ${d.use === "base" ? "selected" : ""}>Только вход</option>
         <option value="ext" ${d.use === "ext" ? "selected" : ""}>Только продление</option>
       </select>
+      <p class="note tfFix">«Только вход» — тариф виден только в «Новом посещении», «Только продление» — только в «Продлить».</p>
       <div class="summary" id="tfPpm"></div>
       ${isNew ? "" : `<p style="color:var(--muted);font-size:13px">Изменение цены не меняет уже выставленные счета — в них сохранён снимок цены.</p>`}
       <div class="foot"><button class="btn ghost" data-x>Отмена</button><button class="btn" id="tfOk">Сохранить</button></div></div>`, (m) => {
